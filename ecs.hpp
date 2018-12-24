@@ -7,11 +7,14 @@
 #pragma once
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 
 #include <mutex>
 #include <limits>
+#include <utility>
 #include <functional>
+#include <type_traits>
 #include <unordered_set>
 
 // -----------------------------------------------------------------------------
@@ -25,7 +28,46 @@ namespace ecs_hpp
     class world;
     class entity;
 
-    using entity_id = std::uint64_t;
+    using family_id = std::uint16_t;
+    using entity_id = std::uint32_t;
+
+    static_assert(
+        std::is_unsigned<family_id>::value,
+        "ecs_hpp::family_id must be an unsigned integer");
+
+    static_assert(
+        std::is_unsigned<entity_id>::value,
+        "ecs_hpp::entity_id must be an unsigned integer");
+}
+
+// -----------------------------------------------------------------------------
+//
+// detail
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename Tag = void >
+        struct type_family_base {
+            static family_id last_id_;
+        };
+
+        template < typename T >
+        class type_family : private type_family_base<> {
+        public:
+            static family_id id() noexcept {
+                static family_id self_id = ++last_id_;
+                assert(self_id > 0u && "ecs_hpp::family_id overflow");
+                return self_id;
+            }
+        };
+
+        template < typename Tag >
+        family_id type_family_base<Tag>::last_id_{0u};
+    }
 }
 
 // -----------------------------------------------------------------------------

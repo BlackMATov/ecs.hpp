@@ -12,21 +12,34 @@ namespace ecs = ecs_hpp;
 
 namespace
 {
-    struct position {
+    struct position_c {
         int x{0};
         int y{0};
 
-        position() = default;
-        position(int nx, int ny) : x(nx), y(ny) {}
+        position_c() = default;
+        position_c(int nx, int ny) : x(nx), y(ny) {}
     };
 
-    struct velocity {
+    struct velocity_c {
         int dx{0};
         int dy{0};
 
-        velocity() = default;
-        velocity(int ndx, int ndy) : dx(ndx), dy(ndy) {}
+        velocity_c() = default;
+        velocity_c(int ndx, int ndy) : dx(ndx), dy(ndy) {}
     };
+}
+
+TEST_CASE("detail") {
+    SECTION("get_type_id") {
+        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
+        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
+
+        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
+        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
+
+        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
+        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
+    }
 }
 
 TEST_CASE("world") {
