@@ -1,6 +1,36 @@
 cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 project(ecs)
 
+#
+# coverage mode
+#
+
+option(ECS_BUILD_WITH_COVERAGE "Build with coverage" OFF)
+if(ECS_BUILD_WITH_COVERAGE AND (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"))
+    add_definitions(-DECS_BUILD_WITH_COVERAGE)
+    set(ECS_COVERAGE_FLAGS "--coverage")
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${ECS_COVERAGE_FLAGS}")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${ECS_COVERAGE_FLAGS}")
+    set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} ${ECS_COVERAGE_FLAGS}")
+endif()
+
+#
+# sanitizer mode
+#
+
+option(ECS_BUILD_WITH_SANITIZER "Build with sanitizer" OFF)
+if(ECS_BUILD_WITH_SANITIZER AND (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"))
+    add_definitions(-DECS_BUILD_WITH_SANITIZER)
+    set(ECS_SANITIZER_FLAGS "-fno-omit-frame-pointer -fsanitize=address")
+    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${ECS_SANITIZER_FLAGS}")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${ECS_SANITIZER_FLAGS}")
+    set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} ${ECS_SANITIZER_FLAGS}")
+endif()
+
+#
+# tests executable
+#
+
 file(GLOB test_sources "*.cpp" "*.hpp")
 add_executable(${PROJECT_NAME} ${test_sources})
 
