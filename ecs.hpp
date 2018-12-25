@@ -277,25 +277,26 @@ namespace ecs_hpp
 
         template < typename T >
         T& get_component(const entity& ent);
-
         template < typename T >
         const T& get_component(const entity& ent) const;
 
         template < typename T >
         T* find_component(const entity& ent) noexcept;
-
         template < typename T >
         const T* find_component(const entity& ent) const noexcept;
 
         template < typename T, typename F >
-        void for_each_component(F&& f) noexcept;
-
+        void for_each_component(F&& f);
         template < typename T, typename F >
-        void for_each_component(F&& f) const noexcept;
+        void for_each_component(F&& f) const;
+
+        template < typename... Ts, typename F >
+        void for_joined_components(F&& f);
+        template < typename... Ts, typename F >
+        void for_joined_components(F&& f) const;
     private:
         template < typename T >
         detail::component_storage<T>* find_storage_() noexcept;
-
         template < typename T >
         const detail::component_storage<T>* find_storage_() const noexcept;
 
@@ -304,6 +305,25 @@ namespace ecs_hpp
 
         bool is_entity_alive_impl_(const entity& ent) const noexcept;
         std::size_t remove_all_components_impl_(const entity& ent) const noexcept;
+
+        template < typename T >
+        T* find_component_impl_(const entity& ent) noexcept;
+        template < typename T >
+        const T* find_component_impl_(const entity& ent) const noexcept;
+
+        template < typename... Ts, typename F >
+        void for_joined_components_impl_(F&& f);
+        template < typename T, typename... Ts, typename F, typename... Cs >
+        void for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs);
+        template < typename F, typename... Cs >
+        void for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs);
+
+        template < typename... Ts, typename F >
+        void for_joined_components_impl_(F&& f) const;
+        template < typename T, typename... Ts, typename F, typename... Cs >
+        void for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const;
+        template < typename F, typename... Cs >
+        void for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const;
     private:
         mutable std::mutex mutex_;
 
@@ -471,8 +491,7 @@ namespace ecs_hpp
     template < typename T >
     T& world::get_component(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
-        detail::component_storage<T>* storage = find_storage_<T>();
-        T* component = storage ? storage->find(ent.id()) : nullptr;
+        T* component = find_component_impl_<T>(ent);
         if ( component ) {
             return *component;
         }
@@ -482,8 +501,7 @@ namespace ecs_hpp
     template < typename T >
     const T& world::get_component(const entity& ent) const {
         std::lock_guard<std::mutex> guard(mutex_);
-        const detail::component_storage<T>* storage = find_storage_<T>();
-        const T* component = storage ? storage->find(ent.id()) : nullptr;
+        const T* component = find_component_impl_<T>(ent);
         if ( component ) {
             return *component;
         }
@@ -493,23 +511,17 @@ namespace ecs_hpp
     template < typename T >
     T* world::find_component(const entity& ent) noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
-        detail::component_storage<T>* storage = find_storage_<T>();
-        return storage
-            ? storage->find(ent.id())
-            : nullptr;
+        return find_component_impl_<T>(ent);
     }
 
     template < typename T >
     const T* world::find_component(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
-        const detail::component_storage<T>* storage = find_storage_<T>();
-        return storage
-            ? storage->find(ent.id())
-            : nullptr;
+        return find_component_impl_<T>(ent);
     }
 
     template < typename T, typename F >
-    void world::for_each_component(F&& f) noexcept {
+    void world::for_each_component(F&& f) {
         std::lock_guard<std::mutex> guard(mutex_);
         detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
@@ -518,12 +530,24 @@ namespace ecs_hpp
     }
 
     template < typename T, typename F >
-    void world::for_each_component(F&& f) const noexcept {
+    void world::for_each_component(F&& f) const {
         std::lock_guard<std::mutex> guard(mutex_);
         const detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
             storage->for_each_component(std::forward<F>(f));
         }
+    }
+
+    template < typename... Ts, typename F >
+    void world::for_joined_components(F&& f) {
+        std::lock_guard<std::mutex> guard(mutex_);
+        for_joined_components_impl_<Ts...>(std::forward<F>(f));
+    }
+
+    template < typename... Ts, typename F >
+    void world::for_joined_components(F&& f) const {
+        std::lock_guard<std::mutex> guard(mutex_);
+        for_joined_components_impl_<Ts...>(std::forward<F>(f));
     }
 
     template < typename T >
@@ -576,5 +600,69 @@ namespace ecs_hpp
             }
         }
         return removed_components;
+    }
+
+    template < typename T >
+    T* world::find_component_impl_(const entity& ent) noexcept {
+        detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->find(ent.id())
+            : nullptr;
+    }
+
+    template < typename T >
+    const T* world::find_component_impl_(const entity& ent) const noexcept {
+        const detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->find(ent.id())
+            : nullptr;
+    }
+
+    template < typename... Ts, typename F >
+    void world::for_joined_components_impl_(F&& f) {
+        for ( const auto& e : entities_ ) {
+            for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
+        }
+    }
+
+    template < typename T, typename... Ts, typename F, typename... Cs >
+    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) {
+        T* c = find_component_impl_<T>(e);
+        if ( c ) {
+            for_joined_components_impl_<Ts...>(
+                e,
+                std::forward<F>(f),
+                std::forward<Cs>(cs)...,
+                *c);
+        }
+    }
+
+    template < typename F, typename... Cs >
+    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) {
+        f(e, std::forward<Cs>(cs)...);
+    }
+
+    template < typename... Ts, typename F >
+    void world::for_joined_components_impl_(F&& f) const {
+        for ( const auto& e : entities_ ) {
+            for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
+        }
+    }
+
+    template < typename T, typename... Ts, typename F, typename... Cs >
+    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const {
+        const T* c = find_component_impl_<T>(e);
+        if ( c ) {
+            for_joined_components_impl_<Ts...>(
+                e,
+                std::forward<F>(f),
+                std::forward<Cs>(cs)...,
+                *c);
+        }
+    }
+
+    template < typename F, typename... Cs >
+    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const {
+        f(e, std::forward<Cs>(cs)...);
     }
 }

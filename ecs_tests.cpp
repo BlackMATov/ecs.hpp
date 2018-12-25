@@ -21,11 +21,11 @@ namespace
     };
 
     struct velocity_c {
-        int dx{0};
-        int dy{0};
+        int x{0};
+        int y{0};
 
         velocity_c() = default;
-        velocity_c(int ndx, int ndy) : dx(ndx), dy(ndy) {}
+        velocity_c(int nx, int ny) : x(nx), y(ny) {}
     };
 }
 
@@ -163,8 +163,8 @@ TEST_CASE("world") {
             REQUIRE(e1.get_component<position_c>().x == 1);
             REQUIRE(e1.get_component<position_c>().y == 2);
 
-            REQUIRE(e2.get_component<velocity_c>().dx == 3);
-            REQUIRE(e2.get_component<velocity_c>().dy == 4);
+            REQUIRE(e2.get_component<velocity_c>().x == 3);
+            REQUIRE(e2.get_component<velocity_c>().y == 4);
 
             REQUIRE_THROWS_AS(e1.get_component<velocity_c>(), ecs::basic_exception);
             REQUIRE_THROWS_AS(e2.get_component<position_c>(), ecs::basic_exception);
@@ -182,15 +182,15 @@ TEST_CASE("world") {
             w.assign_component<velocity_c>(e2, 3, 4);
 
             REQUIRE(e1.find_component<position_c>()->y == 2);
-            REQUIRE(e2.find_component<velocity_c>()->dy == 4);
+            REQUIRE(e2.find_component<velocity_c>()->y == 4);
 
             {
                 const ecs::world& ww = w;
                 REQUIRE(ww.get_component<position_c>(e1).x == 1);
                 REQUIRE(ww.get_component<position_c>(e1).y == 2);
 
-                REQUIRE(ww.get_component<velocity_c>(e2).dx == 3);
-                REQUIRE(ww.get_component<velocity_c>(e2).dy == 4);
+                REQUIRE(ww.get_component<velocity_c>(e2).x == 3);
+                REQUIRE(ww.get_component<velocity_c>(e2).y == 4);
 
                 REQUIRE_THROWS_AS(ww.get_component<velocity_c>(e1), ecs::basic_exception);
                 REQUIRE_THROWS_AS(ww.get_component<position_c>(e2), ecs::basic_exception);
@@ -236,6 +236,53 @@ TEST_CASE("world") {
                 });
                 REQUIRE(acc1 == e1.id() + e2.id());
                 REQUIRE(acc2 == 6);
+            }
+        }
+    }
+
+    SECTION("for_joined_components") {
+        {
+            ecs::world w;
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+            auto e3 = w.create_entity();
+            auto e4 = w.create_entity();
+            w.create_entity();
+
+            e1.assign_component<position_c>(1, 2);
+            e1.assign_component<velocity_c>(3, 4);
+            e2.assign_component<position_c>(5, 6);
+            e2.assign_component<velocity_c>(7, 8);
+
+            e3.assign_component<position_c>(100, 500);
+            e4.assign_component<velocity_c>(500, 100);
+
+            {
+                ecs::entity_id acc1 = 0;
+                int acc2 = 0;
+                w.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
+                    ecs::entity e, const position_c& p, const velocity_c& v)
+                {
+                    acc1 += e.id();
+                    acc2 += p.x + v.x;
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+                REQUIRE(acc2 == 16);
+            }
+
+            {
+                const ecs::world& ww = w;
+                ecs::entity_id acc1 = 0;
+                int acc2 = 0;
+                ww.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
+                    ecs::entity e, const position_c& p, const velocity_c& v)
+                {
+                    acc1 += e.id();
+                    acc2 += p.x + v.x;
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+                REQUIRE(acc2 == 16);
             }
         }
     }
