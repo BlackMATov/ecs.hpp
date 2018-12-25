@@ -119,5 +119,25 @@ TEST_CASE("world") {
                 REQUIRE(e1.exists_component<velocity_c>());
             }
         }
+        {
+            ecs::world w;
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            w.assign_component<position_c>(e1);
+            w.assign_component<velocity_c>(e1);
+
+            w.assign_component<position_c>(e2);
+            w.assign_component<velocity_c>(e2);
+
+            w.destroy_entity(e1);
+
+            REQUIRE_FALSE(w.exists_component<position_c>(e1));
+            REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
+
+            REQUIRE(w.exists_component<position_c>(e2));
+            REQUIRE(w.exists_component<velocity_c>(e2));
+        }
     }
 }

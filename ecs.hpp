@@ -202,8 +202,11 @@ namespace ecs_hpp
     private:
         template < typename T >
         detail::component_storage<T>* find_storage_() const;
+
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
+
+        std::size_t remove_all_components_impl_(const entity& ent) const noexcept;
     private:
         mutable std::mutex mutex_;
 
@@ -297,6 +300,7 @@ namespace ecs_hpp
 
     inline bool world::destroy_entity(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
+        remove_all_components_impl_(ent);
         return entities_.erase(ent) > 0u;
     }
 
@@ -333,13 +337,7 @@ namespace ecs_hpp
 
     inline std::size_t world::remove_all_components(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
-        std::size_t removed_components = 0u;
-        for ( auto& storage_p : storages_ ) {
-            if ( storage_p.second->remove(ent.id()) ) {
-                ++removed_components;
-            }
-        }
-        return removed_components;
+        return remove_all_components_impl_(ent);
     }
 
     template < typename T >
@@ -365,5 +363,15 @@ namespace ecs_hpp
         assert(emplace_r.second && "unexpected internal error");
         return *static_cast<detail::component_storage<T>*>(
             emplace_r.first->second.get());
+    }
+
+    inline std::size_t world::remove_all_components_impl_(const entity& ent) const noexcept {
+        std::size_t removed_components = 0u;
+        for ( auto& storage_p : storages_ ) {
+            if ( storage_p.second->remove(ent.id()) ) {
+                ++removed_components;
+            }
+        }
+        return removed_components;
     }
 }
