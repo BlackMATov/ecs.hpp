@@ -14,6 +14,8 @@
 #include <memory>
 #include <limits>
 #include <utility>
+#include <exception>
+#include <stdexcept>
 #include <functional>
 #include <type_traits>
 #include <unordered_set>
@@ -100,6 +102,8 @@ namespace ecs_hpp
             void assign(entity_id id, Args&&... args);
             bool remove(entity_id id) noexcept override;
             bool exists(entity_id id) const noexcept override;
+            T* find(entity_id id) noexcept;
+            const T* find(entity_id id) const noexcept;
         private:
             std::unordered_map<entity_id, T> components_;
         };
@@ -119,7 +123,38 @@ namespace ecs_hpp
         bool component_storage<T>::exists(entity_id id) const noexcept {
             return components_.find(id) != components_.end();
         }
+
+        template < typename T >
+        T* component_storage<T>::find(entity_id id) noexcept {
+            const auto iter = components_.find(id);
+            return iter != components_.end()
+                ? &iter->second
+                : nullptr;
+        }
+
+        template < typename T >
+        const T* component_storage<T>::find(entity_id id) const noexcept {
+            const auto iter = components_.find(id);
+            return iter != components_.end()
+                ? &iter->second
+                : nullptr;
+        }
     }
+}
+
+// -----------------------------------------------------------------------------
+//
+// exceptions
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    class basic_exception : public std::logic_error {
+    public:
+        basic_exception(const char* msg)
+        : std::logic_error(msg) {}
+    };
 }
 
 // -----------------------------------------------------------------------------
@@ -151,6 +186,18 @@ namespace ecs_hpp
         bool exists_component() const noexcept;
 
         std::size_t remove_all_components() noexcept;
+
+        template < typename T >
+        T& get_component();
+
+        template < typename T >
+        const T& get_component() const;
+
+        template < typename T >
+        T* find_component() noexcept;
+
+        template < typename T >
+        const T* find_component() const noexcept;
     private:
         world& owner_;
         entity_id id_{0u};
@@ -199,9 +246,24 @@ namespace ecs_hpp
         bool exists_component(const entity& ent) const noexcept;
 
         std::size_t remove_all_components(const entity& ent) const noexcept;
+
+        template < typename T >
+        T& get_component(const entity& ent);
+
+        template < typename T >
+        const T& get_component(const entity& ent) const;
+
+        template < typename T >
+        T* find_component(const entity& ent) noexcept;
+
+        template < typename T >
+        const T* find_component(const entity& ent) const noexcept;
     private:
         template < typename T >
-        detail::component_storage<T>* find_storage_() const;
+        detail::component_storage<T>* find_storage_() noexcept;
+
+        template < typename T >
+        const detail::component_storage<T>* find_storage_() const noexcept;
 
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
@@ -269,6 +331,26 @@ namespace ecs_hpp
 
     inline std::size_t entity::remove_all_components() noexcept {
         return owner_.remove_all_components(*this);
+    }
+
+    template < typename T >
+    T& entity::get_component() {
+        return owner_.get_component<T>(*this);
+    }
+
+    template < typename T >
+    const T& entity::get_component() const {
+        return owner_.get_component<T>(*this);
+    }
+
+    template < typename T >
+    T* entity::find_component() noexcept {
+        return owner_.find_component<T>(*this);
+    }
+
+    template < typename T >
+    const T* entity::find_component() const noexcept {
+        return owner_.find_component<T>(*this);
     }
 
     inline bool operator==(const entity& l, const entity& r) noexcept {
@@ -353,11 +435,55 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    detail::component_storage<T>* world::find_storage_() const {
+    T& world::get_component(const entity& ent) {
+        T* component = find_component<T>(ent);
+        if ( component ) {
+            return *component;
+        }
+        throw basic_exception("component not found");
+    }
+
+    template < typename T >
+    const T& world::get_component(const entity& ent) const {
+        const T* component = find_component<T>(ent);
+        if ( component ) {
+            return *component;
+        }
+        throw basic_exception("component not found");
+    }
+
+    template < typename T >
+    T* world::find_component(const entity& ent) noexcept {
+        detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->find(ent.id())
+            : nullptr;
+    }
+
+    template < typename T >
+    const T* world::find_component(const entity& ent) const noexcept {
+        const detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->find(ent.id())
+            : nullptr;
+    }
+
+    template < typename T >
+    detail::component_storage<T>* world::find_storage_() noexcept {
         const auto family = detail::type_family<T>::id();
         const auto iter = storages_.find(family);
         if ( iter != storages_.end() ) {
             return static_cast<detail::component_storage<T>*>(iter->second.get());
+        }
+        return nullptr;
+    }
+
+    template < typename T >
+    const detail::component_storage<T>* world::find_storage_() const noexcept {
+        const auto family = detail::type_family<T>::id();
+        const auto iter = storages_.find(family);
+        if ( iter != storages_.end() ) {
+            return static_cast<const detail::component_storage<T>*>(iter->second.get());
         }
         return nullptr;
     }

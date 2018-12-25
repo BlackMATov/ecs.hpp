@@ -79,7 +79,7 @@ TEST_CASE("world") {
             REQUIRE_FALSE(w.destroy_entity(e2));
         }
     }
-    SECTION("components") {
+    SECTION("component_assigning") {
         {
             ecs::world w;
             ecs::entity e1 = w.create_entity();
@@ -145,6 +145,53 @@ TEST_CASE("world") {
             REQUIRE(e1.destroy());
             REQUIRE_FALSE(e1.assign_component<position_c>());
             REQUIRE_FALSE(w.exists_component<position_c>(e1));
+        }
+    }
+    SECTION("component_accessing") {
+        {
+            ecs::world w;
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            REQUIRE_FALSE(e1.find_component<position_c>());
+            REQUIRE_FALSE(e2.find_component<velocity_c>());
+
+            e1.assign_component<position_c>(1, 2);
+            e2.assign_component<velocity_c>(3, 4);
+
+            REQUIRE(e1.get_component<position_c>().x == 1);
+            REQUIRE(e1.get_component<position_c>().y == 2);
+
+            REQUIRE(e2.get_component<velocity_c>().dx == 3);
+            REQUIRE(e2.get_component<velocity_c>().dy == 4);
+
+            REQUIRE_THROWS_AS(e1.get_component<velocity_c>(), ecs::basic_exception);
+            REQUIRE_THROWS_AS(e2.get_component<position_c>(), ecs::basic_exception);
+        }
+        {
+            ecs::world w;
+
+            const auto e1 = w.create_entity();
+            const auto e2 = w.create_entity();
+
+            REQUIRE_FALSE(e1.find_component<position_c>());
+            REQUIRE_FALSE(e2.find_component<velocity_c>());
+
+            w.assign_component<position_c>(e1, 1, 2);
+            w.assign_component<velocity_c>(e2, 3, 4);
+
+            {
+                const ecs::world& ww = w;
+                REQUIRE(ww.get_component<position_c>(e1).x == 1);
+                REQUIRE(ww.get_component<position_c>(e1).y == 2);
+
+                REQUIRE(ww.get_component<velocity_c>(e2).dx == 3);
+                REQUIRE(ww.get_component<velocity_c>(e2).dy == 4);
+
+                REQUIRE_THROWS_AS(ww.get_component<velocity_c>(e1), ecs::basic_exception);
+                REQUIRE_THROWS_AS(ww.get_component<position_c>(e2), ecs::basic_exception);
+            }
         }
     }
 }
