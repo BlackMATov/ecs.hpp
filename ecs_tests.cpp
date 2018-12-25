@@ -27,6 +27,16 @@ namespace
         velocity_c() = default;
         velocity_c(int nx, int ny) : x(nx), y(ny) {}
     };
+
+    bool operator==(const position_c& l, const position_c& r) noexcept {
+        return l.x == r.x
+            && l.y == r.y;
+    }
+
+    bool operator==(const velocity_c& l, const velocity_c& r) noexcept {
+        return l.x == r.x
+            && l.y == r.y;
+    }
 }
 
 TEST_CASE("detail") {
@@ -201,6 +211,75 @@ TEST_CASE("world") {
                 REQUIRE_FALSE(ww.find_component<position_c>(e1));
                 REQUIRE_FALSE(ww.find_component<velocity_c>(e2));
             }
+        }
+        {
+            ecs::world w;
+
+            auto e1 = w.create_entity();
+
+            REQUIRE(e1.find_components<>() ==
+                std::make_tuple());
+            REQUIRE(e1.find_components<velocity_c>() ==
+                std::make_tuple<velocity_c*>(nullptr));
+            REQUIRE(e1.find_components<position_c, velocity_c>() ==
+                std::make_tuple<position_c*, velocity_c*>(nullptr, nullptr));
+
+            REQUIRE(e1.get_components<>() == std::make_tuple());
+            REQUIRE_THROWS(e1.get_components<velocity_c>());
+            REQUIRE_THROWS(e1.get_components<position_c, velocity_c>());
+
+            {
+                const auto ee1 = e1;
+
+                REQUIRE(ee1.find_components<>() ==
+                    std::make_tuple());
+                REQUIRE(ee1.find_components<velocity_c>() ==
+                    std::make_tuple<velocity_c*>(nullptr));
+                REQUIRE(ee1.find_components<position_c, velocity_c>() ==
+                    std::make_tuple<position_c*, velocity_c*>(nullptr, nullptr));
+
+                REQUIRE(ee1.get_components<>() == std::make_tuple());
+                REQUIRE_THROWS(ee1.get_components<velocity_c>());
+                REQUIRE_THROWS(ee1.get_components<position_c, velocity_c>());
+            }
+
+            e1.assign_component<velocity_c>(3, 4);
+
+            REQUIRE(e1.find_components<velocity_c>() ==
+                std::make_tuple<velocity_c*>(e1.find_component<velocity_c>()));
+            REQUIRE(e1.find_components<position_c, velocity_c>() ==
+                std::make_tuple<position_c*, velocity_c*>(nullptr, e1.find_component<velocity_c>()));
+
+            REQUIRE(e1.get_components<velocity_c>() ==
+                std::make_tuple<velocity_c&>(e1.get_component<velocity_c>()));
+            REQUIRE_THROWS(e1.get_components<position_c, velocity_c>());
+
+            {
+                const auto ee1 = e1;
+
+                REQUIRE(ee1.find_components<velocity_c>() ==
+                    std::make_tuple<velocity_c*>(e1.find_component<velocity_c>()));
+                REQUIRE(ee1.find_components<position_c, velocity_c>() ==
+                    std::make_tuple<position_c*, velocity_c*>(nullptr, e1.find_component<velocity_c>()));
+
+                REQUIRE(ee1.get_components<velocity_c>() ==
+                    std::make_tuple<const velocity_c&>(ee1.get_component<velocity_c>()));
+                REQUIRE_THROWS(ee1.get_components<position_c, velocity_c>());
+            }
+
+            e1.assign_component<position_c>(1, 2);
+
+            auto p = e1.get_components<position_c, velocity_c>();
+            std::get<0>(p).x = 10;
+            std::get<1>(p).x = 30;
+            REQUIRE(e1.get_component<position_c>().x == 10);
+            REQUIRE(e1.get_component<velocity_c>().x == 30);
+
+            auto p2 = e1.find_components<position_c, velocity_c>();
+            std::get<0>(p2)->y = 20;
+            std::get<1>(p2)->y = 40;
+            REQUIRE(e1.get_component<position_c>().y == 20);
+            REQUIRE(e1.get_component<velocity_c>().y == 40);
         }
     }
     SECTION("for_each_component") {

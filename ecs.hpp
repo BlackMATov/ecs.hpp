@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <tuple>
 #include <mutex>
 #include <memory>
 #include <limits>
@@ -226,6 +227,16 @@ namespace ecs_hpp
 
         template < typename T >
         const T* find_component() const noexcept;
+
+        template < typename... Ts >
+        std::tuple<Ts&...> get_components();
+        template < typename... Ts >
+        std::tuple<const Ts&...> get_components() const;
+
+        template < typename... Ts >
+        std::tuple<Ts*...> find_components() noexcept;
+        template < typename... Ts >
+        std::tuple<const Ts*...> find_components() const noexcept;
     private:
         world& owner_;
         entity_id id_{0u};
@@ -284,6 +295,16 @@ namespace ecs_hpp
         T* find_component(const entity& ent) noexcept;
         template < typename T >
         const T* find_component(const entity& ent) const noexcept;
+
+        template < typename... Ts >
+        std::tuple<Ts&...> get_components(const entity& ent);
+        template < typename... Ts >
+        std::tuple<const Ts&...> get_components(const entity& ent) const;
+
+        template < typename... Ts >
+        std::tuple<Ts*...> find_components(const entity& ent) noexcept;
+        template < typename... Ts >
+        std::tuple<const Ts*...> find_components(const entity& ent) const noexcept;
 
         template < typename T, typename F >
         void for_each_component(F&& f);
@@ -363,7 +384,7 @@ namespace ecs_hpp
     }
 
     inline bool entity::is_alive() const noexcept {
-        return owner_.is_entity_alive(*this);
+        return const_cast<const world&>(owner_).is_entity_alive(*this);
     }
 
     template < typename T, typename... Args >
@@ -380,7 +401,7 @@ namespace ecs_hpp
 
     template < typename T >
     bool entity::exists_component() const noexcept {
-        return owner_.exists_component<T>(*this);
+        return const_cast<const world&>(owner_).exists_component<T>(*this);
     }
 
     inline std::size_t entity::remove_all_components() noexcept {
@@ -394,7 +415,7 @@ namespace ecs_hpp
 
     template < typename T >
     const T& entity::get_component() const {
-        return owner_.get_component<T>(*this);
+        return const_cast<const world&>(owner_).get_component<T>(*this);
     }
 
     template < typename T >
@@ -404,7 +425,27 @@ namespace ecs_hpp
 
     template < typename T >
     const T* entity::find_component() const noexcept {
-        return owner_.find_component<T>(*this);
+        return const_cast<const world&>(owner_).find_component<T>(*this);
+    }
+
+    template < typename... Ts >
+    std::tuple<Ts&...> entity::get_components() {
+        return owner_.get_components<Ts...>(*this);
+    }
+
+    template < typename... Ts >
+    std::tuple<const Ts&...> entity::get_components() const {
+        return const_cast<const world&>(owner_).get_components<Ts...>(*this);
+    }
+
+    template < typename... Ts >
+    std::tuple<Ts*...> entity::find_components() noexcept {
+        return owner_.find_components<Ts...>(*this);
+    }
+
+    template < typename... Ts >
+    std::tuple<const Ts*...> entity::find_components() const noexcept {
+        return const_cast<const world&>(owner_).find_components<Ts...>(*this);
     }
 
     inline bool operator==(const entity& l, const entity& r) noexcept {
@@ -518,6 +559,26 @@ namespace ecs_hpp
     const T* world::find_component(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
         return find_component_impl_<T>(ent);
+    }
+
+    template < typename... Ts >
+    std::tuple<Ts&...> world::get_components(const entity& ent) {
+        return std::make_tuple(std::ref(get_component<Ts>(ent))...);
+    }
+
+    template < typename... Ts >
+    std::tuple<const Ts&...> world::get_components(const entity& ent) const {
+        return std::make_tuple(std::cref(get_component<Ts>(ent))...);
+    }
+
+    template < typename... Ts >
+    std::tuple<Ts*...> world::find_components(const entity& ent) noexcept {
+        return std::make_tuple(find_component<Ts>(ent)...);
+    }
+
+    template < typename... Ts >
+    std::tuple<const Ts*...> world::find_components(const entity& ent) const noexcept {
+        return std::make_tuple(find_component<Ts>(ent)...);
     }
 
     template < typename T, typename F >
