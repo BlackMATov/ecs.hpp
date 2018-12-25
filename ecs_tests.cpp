@@ -181,6 +181,9 @@ TEST_CASE("world") {
             w.assign_component<position_c>(e1, 1, 2);
             w.assign_component<velocity_c>(e2, 3, 4);
 
+            REQUIRE(e1.find_component<position_c>()->y == 2);
+            REQUIRE(e2.find_component<velocity_c>()->dy == 4);
+
             {
                 const ecs::world& ww = w;
                 REQUIRE(ww.get_component<position_c>(e1).x == 1);
@@ -191,6 +194,48 @@ TEST_CASE("world") {
 
                 REQUIRE_THROWS_AS(ww.get_component<velocity_c>(e1), ecs::basic_exception);
                 REQUIRE_THROWS_AS(ww.get_component<position_c>(e2), ecs::basic_exception);
+
+                ww.remove_all_components(e1);
+                ww.remove_all_components(e2);
+
+                REQUIRE_FALSE(ww.find_component<position_c>(e1));
+                REQUIRE_FALSE(ww.find_component<velocity_c>(e2));
+            }
+        }
+    }
+    SECTION("for_each_component") {
+        {
+            ecs::world w;
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            e1.assign_component<position_c>(1, 2);
+            e1.assign_component<velocity_c>(3, 4);
+            e2.assign_component<position_c>(5, 6);
+            e2.assign_component<velocity_c>(7, 8);
+
+            {
+                ecs::entity_id acc1 = 0;
+                int acc2 = 0;
+                w.for_each_component<position_c>([&acc1, &acc2](ecs::entity e, position_c& p){
+                    acc1 += e.id();
+                    acc2 += p.x;
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+                REQUIRE(acc2 == 6);
+            }
+
+            {
+                const ecs::world& ww = w;
+                ecs::entity_id acc1 = 0;
+                int acc2 = 0;
+                ww.for_each_component<position_c>([&acc1, &acc2](ecs::entity e, const position_c& p){
+                    acc1 += e.id();
+                    acc2 += p.x;
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+                REQUIRE(acc2 == 6);
             }
         }
     }

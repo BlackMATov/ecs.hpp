@@ -98,15 +98,27 @@ namespace ecs_hpp
         template < typename T >
         class component_storage : public component_storage_base {
         public:
+            component_storage(world& owner);
+
             template < typename... Args >
             void assign(entity_id id, Args&&... args);
             bool remove(entity_id id) noexcept override;
             bool exists(entity_id id) const noexcept override;
             T* find(entity_id id) noexcept;
             const T* find(entity_id id) const noexcept;
+
+            template < typename F >
+            void for_each_component(F&& f) noexcept;
+            template < typename F >
+            void for_each_component(F&& f) const noexcept;
         private:
+            world& owner_;
             std::unordered_map<entity_id, T> components_;
         };
+
+        template < typename T >
+        component_storage<T>::component_storage(world& owner)
+        : owner_(owner) {}
 
         template < typename T >
         template < typename... Args >
@@ -138,6 +150,22 @@ namespace ecs_hpp
             return iter != components_.end()
                 ? &iter->second
                 : nullptr;
+        }
+
+        template < typename T >
+        template < typename F >
+        void component_storage<T>::for_each_component(F&& f) noexcept {
+            for ( auto& component_pair : components_ ) {
+                f(entity(owner_, component_pair.first), component_pair.second);
+            }
+        }
+
+        template < typename T >
+        template < typename F >
+        void component_storage<T>::for_each_component(F&& f) const noexcept {
+            for ( auto& component_pair : components_ ) {
+                f(entity(owner_, component_pair.first), component_pair.second);
+            }
         }
     }
 }
@@ -258,6 +286,12 @@ namespace ecs_hpp
 
         template < typename T >
         const T* find_component(const entity& ent) const noexcept;
+
+        template < typename T, typename F >
+        void for_each_component(F&& f) noexcept;
+
+        template < typename T, typename F >
+        void for_each_component(F&& f) const noexcept;
     private:
         template < typename T >
         detail::component_storage<T>* find_storage_() noexcept;
@@ -436,7 +470,9 @@ namespace ecs_hpp
 
     template < typename T >
     T& world::get_component(const entity& ent) {
-        T* component = find_component<T>(ent);
+        std::lock_guard<std::mutex> guard(mutex_);
+        detail::component_storage<T>* storage = find_storage_<T>();
+        T* component = storage ? storage->find(ent.id()) : nullptr;
         if ( component ) {
             return *component;
         }
@@ -445,7 +481,9 @@ namespace ecs_hpp
 
     template < typename T >
     const T& world::get_component(const entity& ent) const {
-        const T* component = find_component<T>(ent);
+        std::lock_guard<std::mutex> guard(mutex_);
+        const detail::component_storage<T>* storage = find_storage_<T>();
+        const T* component = storage ? storage->find(ent.id()) : nullptr;
         if ( component ) {
             return *component;
         }
@@ -454,6 +492,7 @@ namespace ecs_hpp
 
     template < typename T >
     T* world::find_component(const entity& ent) noexcept {
+        std::lock_guard<std::mutex> guard(mutex_);
         detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->find(ent.id())
@@ -462,10 +501,29 @@ namespace ecs_hpp
 
     template < typename T >
     const T* world::find_component(const entity& ent) const noexcept {
+        std::lock_guard<std::mutex> guard(mutex_);
         const detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->find(ent.id())
             : nullptr;
+    }
+
+    template < typename T, typename F >
+    void world::for_each_component(F&& f) noexcept {
+        std::lock_guard<std::mutex> guard(mutex_);
+        detail::component_storage<T>* storage = find_storage_<T>();
+        if ( storage ) {
+            storage->for_each_component(std::forward<F>(f));
+        }
+    }
+
+    template < typename T, typename F >
+    void world::for_each_component(F&& f) const noexcept {
+        std::lock_guard<std::mutex> guard(mutex_);
+        const detail::component_storage<T>* storage = find_storage_<T>();
+        if ( storage ) {
+            storage->for_each_component(std::forward<F>(f));
+        }
     }
 
     template < typename T >
@@ -497,7 +555,7 @@ namespace ecs_hpp
         const auto family = detail::type_family<T>::id();
         const auto emplace_r = storages_.emplace(std::make_pair(
             family,
-            std::make_unique<detail::component_storage<T>>()));
+            std::make_unique<detail::component_storage<T>>(*this)));
         assert(emplace_r.second && "unexpected internal error");
         return *static_cast<detail::component_storage<T>*>(
             emplace_r.first->second.get());
