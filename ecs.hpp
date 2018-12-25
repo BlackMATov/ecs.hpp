@@ -50,13 +50,17 @@ namespace ecs_hpp
 {
     namespace detail
     {
-        template < typename Tag = void >
-        struct type_family_base {
+        template < typename Void = void >
+        class type_family_base {
+            static_assert(
+                std::is_void<Void>::value,
+                "unexpected internal error");
+        protected:
             static family_id last_id_;
         };
 
         template < typename T >
-        class type_family : private type_family_base<> {
+        class type_family : public type_family_base<> {
         public:
             static family_id id() noexcept {
                 static family_id self_id = ++last_id_;
@@ -65,8 +69,8 @@ namespace ecs_hpp
             }
         };
 
-        template < typename Tag >
-        family_id type_family_base<Tag>::last_id_{0u};
+        template < typename Void >
+        family_id type_family_base<Void>::last_id_ = 0u;
     }
 }
 
