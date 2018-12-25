@@ -80,5 +80,44 @@ TEST_CASE("world") {
         }
     }
     SECTION("components") {
+        {
+            ecs::world w;
+            ecs::entity e1{w};
+
+            {
+                REQUIRE_FALSE(w.exists_component<position_c>(e1));
+                REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
+
+                w.assign_component<position_c>(e1);
+
+                REQUIRE(w.exists_component<position_c>(e1));
+                REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
+
+                w.assign_component<velocity_c>(e1);
+
+                REQUIRE(w.exists_component<position_c>(e1));
+                REQUIRE(w.exists_component<velocity_c>(e1));
+
+                REQUIRE(w.remove_all_components(e1) == 2u);
+
+                REQUIRE_FALSE(w.exists_component<position_c>(e1));
+                REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
+            }
+
+            {
+                REQUIRE_FALSE(e1.exists_component<position_c>());
+                REQUIRE_FALSE(e1.exists_component<velocity_c>());
+
+                e1.assign_component<position_c>();
+
+                REQUIRE(e1.exists_component<position_c>());
+                REQUIRE_FALSE(e1.exists_component<velocity_c>());
+
+                e1.assign_component<velocity_c>();
+
+                REQUIRE(e1.exists_component<position_c>());
+                REQUIRE(e1.exists_component<velocity_c>());
+            }
+        }
     }
 }
