@@ -82,18 +82,18 @@ TEST_CASE("world") {
     SECTION("components") {
         {
             ecs::world w;
-            ecs::entity e1{w};
+            ecs::entity e1 = w.create_entity();
 
             {
                 REQUIRE_FALSE(w.exists_component<position_c>(e1));
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
 
-                w.assign_component<position_c>(e1);
+                REQUIRE(w.assign_component<position_c>(e1));
 
                 REQUIRE(w.exists_component<position_c>(e1));
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
 
-                w.assign_component<velocity_c>(e1);
+                REQUIRE(w.assign_component<velocity_c>(e1));
 
                 REQUIRE(w.exists_component<position_c>(e1));
                 REQUIRE(w.exists_component<velocity_c>(e1));
@@ -108,12 +108,12 @@ TEST_CASE("world") {
                 REQUIRE_FALSE(e1.exists_component<position_c>());
                 REQUIRE_FALSE(e1.exists_component<velocity_c>());
 
-                e1.assign_component<position_c>();
+                REQUIRE(e1.assign_component<position_c>());
 
                 REQUIRE(e1.exists_component<position_c>());
                 REQUIRE_FALSE(e1.exists_component<velocity_c>());
 
-                e1.assign_component<velocity_c>();
+                REQUIRE(e1.assign_component<velocity_c>());
 
                 REQUIRE(e1.exists_component<position_c>());
                 REQUIRE(e1.exists_component<velocity_c>());
@@ -125,19 +125,26 @@ TEST_CASE("world") {
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
 
-            w.assign_component<position_c>(e1);
-            w.assign_component<velocity_c>(e1);
+            REQUIRE(w.assign_component<position_c>(e1));
+            REQUIRE(w.assign_component<velocity_c>(e1));
 
-            w.assign_component<position_c>(e2);
-            w.assign_component<velocity_c>(e2);
+            REQUIRE(w.assign_component<position_c>(e2));
+            REQUIRE(w.assign_component<velocity_c>(e2));
 
-            w.destroy_entity(e1);
+            REQUIRE(w.destroy_entity(e1));
 
             REQUIRE_FALSE(w.exists_component<position_c>(e1));
             REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
 
             REQUIRE(w.exists_component<position_c>(e2));
             REQUIRE(w.exists_component<velocity_c>(e2));
+        }
+        {
+            ecs::world w;
+            auto e1 = w.create_entity();
+            REQUIRE(e1.destroy());
+            REQUIRE_FALSE(e1.assign_component<position_c>());
+            REQUIRE_FALSE(w.exists_component<position_c>(e1));
         }
     }
 }

@@ -142,7 +142,7 @@ namespace ecs_hpp
         bool is_alive() const noexcept;
 
         template < typename T, typename... Args >
-        void assign_component(Args&&... args);
+        bool assign_component(Args&&... args);
 
         template < typename T >
         bool remove_component();
@@ -190,7 +190,7 @@ namespace ecs_hpp
         bool is_entity_alive(const entity& ent) const noexcept;
 
         template < typename T, typename... Args >
-        void assign_component(const entity& ent, Args&&... args);
+        bool assign_component(const entity& ent, Args&&... args);
 
         template < typename T >
         bool remove_component(const entity& ent);
@@ -206,6 +206,7 @@ namespace ecs_hpp
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
 
+        bool is_entity_alive_impl_(const entity& ent) const noexcept;
         std::size_t remove_all_components_impl_(const entity& ent) const noexcept;
     private:
         mutable std::mutex mutex_;
@@ -250,8 +251,8 @@ namespace ecs_hpp
     }
 
     template < typename T, typename... Args >
-    void entity::assign_component(Args&&... args) {
-        owner_.assign_component<T>(
+    bool entity::assign_component(Args&&... args) {
+        return owner_.assign_component<T>(
             *this,
             std::forward<Args>(args)...);
     }
@@ -271,7 +272,8 @@ namespace ecs_hpp
     }
 
     inline bool operator==(const entity& l, const entity& r) noexcept {
-        return l.id() == r.id();
+        return &l.owner() == &r.owner()
+            && l.id() == r.id();
     }
 
     inline bool operator!=(const entity& l, const entity& r) noexcept {
@@ -306,20 +308,27 @@ namespace ecs_hpp
 
     inline bool world::is_entity_alive(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
-        return entities_.count(ent) > 0u;
+        return is_entity_alive_impl_(ent);
     }
 
     template < typename T, typename... Args >
-    void world::assign_component(const entity& ent, Args&&... args) {
+    bool world::assign_component(const entity& ent, Args&&... args) {
         std::lock_guard<std::mutex> guard(mutex_);
+        if ( !is_entity_alive_impl_(ent) ) {
+            return false;
+        }
         get_or_create_storage_<T>().assign(
             ent.id(),
             std::forward<Args>(args)...);
+        return true;
     }
 
     template < typename T >
     bool world::remove_component(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
+        if ( !is_entity_alive_impl_(ent) ) {
+            return false;
+        }
         const detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->remove(ent.id())
@@ -329,6 +338,9 @@ namespace ecs_hpp
     template < typename T >
     bool world::exists_component(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
+        if ( !is_entity_alive_impl_(ent) ) {
+            return false;
+        }
         const detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->exists(ent.id())
@@ -365,7 +377,14 @@ namespace ecs_hpp
             emplace_r.first->second.get());
     }
 
+    inline bool world::is_entity_alive_impl_(const entity& ent) const noexcept {
+        return entities_.count(ent) > 0u;
+    }
+
     inline std::size_t world::remove_all_components_impl_(const entity& ent) const noexcept {
+        if ( !is_entity_alive_impl_(ent) ) {
+            return 0u;
+        }
         std::size_t removed_components = 0u;
         for ( auto& storage_p : storages_ ) {
             if ( storage_p.second->remove(ent.id()) ) {
