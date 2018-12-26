@@ -30,8 +30,8 @@
 
 namespace ecs_hpp
 {
-    class world;
     class entity;
+    class registry;
 
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
@@ -116,7 +116,7 @@ namespace ecs_hpp
         template < typename T >
         class component_storage : public component_storage_base {
         public:
-            component_storage(world& owner);
+            component_storage(registry& owner);
 
             template < typename... Args >
             void assign(entity_id id, Args&&... args);
@@ -130,12 +130,12 @@ namespace ecs_hpp
             template < typename F >
             void for_each_component(F&& f) const noexcept;
         private:
-            world& owner_;
+            registry& owner_;
             std::unordered_map<entity_id, T> components_;
         };
 
         template < typename T >
-        component_storage<T>::component_storage(world& owner)
+        component_storage<T>::component_storage(registry& owner)
         : owner_(owner) {}
 
         template < typename T >
@@ -213,10 +213,10 @@ namespace ecs_hpp
 {
     class entity final {
     public:
-        entity(world& owner);
-        entity(world& owner, entity_id id);
+        entity(registry& owner);
+        entity(registry& owner, entity_id id);
 
-        const world& owner() const noexcept;
+        const registry& owner() const noexcept;
         entity_id id() const noexcept;
 
         bool destroy();
@@ -255,7 +255,7 @@ namespace ecs_hpp
         template < typename... Ts >
         std::tuple<const Ts*...> find_components() const noexcept;
     private:
-        world& owner_;
+        registry& owner_;
         entity_id id_{0u};
     };
 
@@ -277,16 +277,16 @@ namespace std
 
 // -----------------------------------------------------------------------------
 //
-// world
+// registry
 //
 // -----------------------------------------------------------------------------
 
 namespace ecs_hpp
 {
-    class world final {
+    class registry final {
     public:
-        world();
-        ~world() noexcept;
+        registry();
+        ~registry() noexcept;
 
         entity create_entity();
         bool destroy_entity(const entity& ent);
@@ -381,14 +381,14 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
-    inline entity::entity(world& owner)
+    inline entity::entity(registry& owner)
     : owner_(owner) {}
 
-    inline entity::entity(world& owner, entity_id id)
+    inline entity::entity(registry& owner, entity_id id)
     : owner_(owner)
     , id_(id) {}
 
-    inline const world& entity::owner() const noexcept {
+    inline const registry& entity::owner() const noexcept {
         return owner_;
     }
 
@@ -477,16 +477,16 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
-// world impl
+// registry impl
 //
 // -----------------------------------------------------------------------------
 
 namespace ecs_hpp
 {
-    inline world::world() = default;
-    inline world::~world() noexcept = default;
+    inline registry::registry() = default;
+    inline registry::~registry() noexcept = default;
 
-    inline entity world::create_entity() {
+    inline entity registry::create_entity() {
         std::lock_guard<std::mutex> guard(mutex_);
         assert(last_entity_id_ < std::numeric_limits<entity_id>::max());
         auto ent = entity(*this, ++last_entity_id_);
@@ -494,19 +494,19 @@ namespace ecs_hpp
         return ent;
     }
 
-    inline bool world::destroy_entity(const entity& ent) {
+    inline bool registry::destroy_entity(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
         remove_all_components_impl_(ent);
         return entities_.erase(ent) > 0u;
     }
 
-    inline bool world::is_entity_alive(const entity& ent) const noexcept {
+    inline bool registry::is_entity_alive(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
         return is_entity_alive_impl_(ent);
     }
 
     template < typename T, typename... Args >
-    bool world::assign_component(const entity& ent, Args&&... args) {
+    bool registry::assign_component(const entity& ent, Args&&... args) {
         std::lock_guard<std::mutex> guard(mutex_);
         if ( !is_entity_alive_impl_(ent) ) {
             return false;
@@ -518,7 +518,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool world::remove_component(const entity& ent) {
+    bool registry::remove_component(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
         if ( !is_entity_alive_impl_(ent) ) {
             return false;
@@ -530,7 +530,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool world::exists_component(const entity& ent) const noexcept {
+    bool registry::exists_component(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
         if ( !is_entity_alive_impl_(ent) ) {
             return false;
@@ -541,13 +541,13 @@ namespace ecs_hpp
             : false;
     }
 
-    inline std::size_t world::remove_all_components(const entity& ent) const noexcept {
+    inline std::size_t registry::remove_all_components(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
         return remove_all_components_impl_(ent);
     }
 
     template < typename T >
-    T& world::get_component(const entity& ent) {
+    T& registry::get_component(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
         T* component = find_component_impl_<T>(ent);
         if ( component ) {
@@ -557,7 +557,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    const T& world::get_component(const entity& ent) const {
+    const T& registry::get_component(const entity& ent) const {
         std::lock_guard<std::mutex> guard(mutex_);
         const T* component = find_component_impl_<T>(ent);
         if ( component ) {
@@ -567,39 +567,39 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    T* world::find_component(const entity& ent) noexcept {
+    T* registry::find_component(const entity& ent) noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
         return find_component_impl_<T>(ent);
     }
 
     template < typename T >
-    const T* world::find_component(const entity& ent) const noexcept {
+    const T* registry::find_component(const entity& ent) const noexcept {
         std::lock_guard<std::mutex> guard(mutex_);
         return find_component_impl_<T>(ent);
     }
 
     template < typename... Ts >
-    std::tuple<Ts&...> world::get_components(const entity& ent) {
+    std::tuple<Ts&...> registry::get_components(const entity& ent) {
         return std::make_tuple(std::ref(get_component<Ts>(ent))...);
     }
 
     template < typename... Ts >
-    std::tuple<const Ts&...> world::get_components(const entity& ent) const {
+    std::tuple<const Ts&...> registry::get_components(const entity& ent) const {
         return std::make_tuple(std::cref(get_component<Ts>(ent))...);
     }
 
     template < typename... Ts >
-    std::tuple<Ts*...> world::find_components(const entity& ent) noexcept {
+    std::tuple<Ts*...> registry::find_components(const entity& ent) noexcept {
         return std::make_tuple(find_component<Ts>(ent)...);
     }
 
     template < typename... Ts >
-    std::tuple<const Ts*...> world::find_components(const entity& ent) const noexcept {
+    std::tuple<const Ts*...> registry::find_components(const entity& ent) const noexcept {
         return std::make_tuple(find_component<Ts>(ent)...);
     }
 
     template < typename T, typename F >
-    void world::for_each_component(F&& f) {
+    void registry::for_each_component(F&& f) {
         std::lock_guard<std::mutex> guard(mutex_);
         detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
@@ -608,7 +608,7 @@ namespace ecs_hpp
     }
 
     template < typename T, typename F >
-    void world::for_each_component(F&& f) const {
+    void registry::for_each_component(F&& f) const {
         std::lock_guard<std::mutex> guard(mutex_);
         const detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
@@ -617,19 +617,19 @@ namespace ecs_hpp
     }
 
     template < typename... Ts, typename F >
-    void world::for_joined_components(F&& f) {
+    void registry::for_joined_components(F&& f) {
         std::lock_guard<std::mutex> guard(mutex_);
         for_joined_components_impl_<Ts...>(std::forward<F>(f));
     }
 
     template < typename... Ts, typename F >
-    void world::for_joined_components(F&& f) const {
+    void registry::for_joined_components(F&& f) const {
         std::lock_guard<std::mutex> guard(mutex_);
         for_joined_components_impl_<Ts...>(std::forward<F>(f));
     }
 
     template < typename T >
-    detail::component_storage<T>* world::find_storage_() noexcept {
+    detail::component_storage<T>* registry::find_storage_() noexcept {
         const auto family = detail::type_family<T>::id();
         const auto iter = storages_.find(family);
         if ( iter != storages_.end() ) {
@@ -639,7 +639,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    const detail::component_storage<T>* world::find_storage_() const noexcept {
+    const detail::component_storage<T>* registry::find_storage_() const noexcept {
         const auto family = detail::type_family<T>::id();
         const auto iter = storages_.find(family);
         if ( iter != storages_.end() ) {
@@ -649,7 +649,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    detail::component_storage<T>& world::get_or_create_storage_() {
+    detail::component_storage<T>& registry::get_or_create_storage_() {
         detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
             return *storage;
@@ -663,11 +663,11 @@ namespace ecs_hpp
             emplace_r.first->second.get());
     }
 
-    inline bool world::is_entity_alive_impl_(const entity& ent) const noexcept {
+    inline bool registry::is_entity_alive_impl_(const entity& ent) const noexcept {
         return entities_.count(ent) > 0u;
     }
 
-    inline std::size_t world::remove_all_components_impl_(const entity& ent) const noexcept {
+    inline std::size_t registry::remove_all_components_impl_(const entity& ent) const noexcept {
         if ( !is_entity_alive_impl_(ent) ) {
             return 0u;
         }
@@ -681,7 +681,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    T* world::find_component_impl_(const entity& ent) noexcept {
+    T* registry::find_component_impl_(const entity& ent) noexcept {
         detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->find(ent.id())
@@ -689,7 +689,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    const T* world::find_component_impl_(const entity& ent) const noexcept {
+    const T* registry::find_component_impl_(const entity& ent) const noexcept {
         const detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->find(ent.id())
@@ -697,14 +697,14 @@ namespace ecs_hpp
     }
 
     template < typename... Ts, typename F >
-    void world::for_joined_components_impl_(F&& f) {
+    void registry::for_joined_components_impl_(F&& f) {
         for ( const auto& e : entities_ ) {
             for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
         }
     }
 
     template < typename T, typename... Ts, typename F, typename... Cs >
-    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) {
+    void registry::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) {
         T* c = find_component_impl_<T>(e);
         if ( c ) {
             for_joined_components_impl_<Ts...>(
@@ -716,19 +716,19 @@ namespace ecs_hpp
     }
 
     template < typename F, typename... Cs >
-    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) {
+    void registry::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) {
         f(e, std::forward<Cs>(cs)...);
     }
 
     template < typename... Ts, typename F >
-    void world::for_joined_components_impl_(F&& f) const {
+    void registry::for_joined_components_impl_(F&& f) const {
         for ( const auto& e : entities_ ) {
             for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
         }
     }
 
     template < typename T, typename... Ts, typename F, typename... Cs >
-    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const {
+    void registry::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const {
         const T* c = find_component_impl_<T>(e);
         if ( c ) {
             for_joined_components_impl_<Ts...>(
@@ -740,7 +740,7 @@ namespace ecs_hpp
     }
 
     template < typename F, typename... Cs >
-    void world::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const {
+    void registry::for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const {
         f(e, std::forward<Cs>(cs)...);
     }
 }

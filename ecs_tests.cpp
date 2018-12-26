@@ -52,10 +52,10 @@ TEST_CASE("detail") {
     }
 }
 
-TEST_CASE("world") {
+TEST_CASE("registry") {
     SECTION("entities") {
         {
-            ecs::world w;
+            ecs::registry w;
 
             ecs::entity e1{w};
             ecs::entity e2{w};
@@ -68,7 +68,7 @@ TEST_CASE("world") {
             REQUIRE_FALSE(w.destroy_entity(e2));
         }
         {
-            ecs::world w;
+            ecs::registry w;
 
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
@@ -91,7 +91,7 @@ TEST_CASE("world") {
     }
     SECTION("component_assigning") {
         {
-            ecs::world w;
+            ecs::registry w;
             ecs::entity e1 = w.create_entity();
 
             {
@@ -130,7 +130,7 @@ TEST_CASE("world") {
             }
         }
         {
-            ecs::world w;
+            ecs::registry w;
 
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
@@ -150,7 +150,7 @@ TEST_CASE("world") {
             REQUIRE(w.exists_component<velocity_c>(e2));
         }
         {
-            ecs::world w;
+            ecs::registry w;
             auto e1 = w.create_entity();
             REQUIRE(e1.destroy());
             REQUIRE_FALSE(e1.assign_component<position_c>());
@@ -159,7 +159,7 @@ TEST_CASE("world") {
     }
     SECTION("component_accessing") {
         {
-            ecs::world w;
+            ecs::registry w;
 
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
@@ -180,7 +180,7 @@ TEST_CASE("world") {
             REQUIRE_THROWS_AS(e2.get_component<position_c>(), ecs::basic_exception);
         }
         {
-            ecs::world w;
+            ecs::registry w;
 
             const auto e1 = w.create_entity();
             const auto e2 = w.create_entity();
@@ -195,7 +195,7 @@ TEST_CASE("world") {
             REQUIRE(e2.find_component<velocity_c>()->y == 4);
 
             {
-                const ecs::world& ww = w;
+                const ecs::registry& ww = w;
                 REQUIRE(ww.get_component<position_c>(e1).x == 1);
                 REQUIRE(ww.get_component<position_c>(e1).y == 2);
 
@@ -213,7 +213,7 @@ TEST_CASE("world") {
             }
         }
         {
-            ecs::world w;
+            ecs::registry w;
 
             auto e1 = w.create_entity();
 
@@ -284,7 +284,7 @@ TEST_CASE("world") {
     }
     SECTION("for_each_component") {
         {
-            ecs::world w;
+            ecs::registry w;
 
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
@@ -306,7 +306,7 @@ TEST_CASE("world") {
             }
 
             {
-                const ecs::world& ww = w;
+                const ecs::registry& ww = w;
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
                 ww.for_each_component<position_c>([&acc1, &acc2](ecs::entity e, const position_c& p){
@@ -321,7 +321,7 @@ TEST_CASE("world") {
 
     SECTION("for_joined_components") {
         {
-            ecs::world w;
+            ecs::registry w;
 
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
@@ -351,7 +351,7 @@ TEST_CASE("world") {
             }
 
             {
-                const ecs::world& ww = w;
+                const ecs::registry& ww = w;
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
                 ww.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
