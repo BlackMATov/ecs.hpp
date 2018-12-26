@@ -318,7 +318,6 @@ TEST_CASE("registry") {
             }
         }
     }
-
     SECTION("for_joined_components") {
         {
             ecs::registry w;
@@ -363,6 +362,40 @@ TEST_CASE("registry") {
                 REQUIRE(acc1 == e1.id() + e2.id());
                 REQUIRE(acc2 == 16);
             }
+        }
+    }
+    SECTION("systems") {
+        {
+            class movement_system : public ecs::system {
+            public:
+                void process(ecs::registry& owner) override {
+                    owner.for_joined_components<position_c, velocity_c>([](
+                        ecs::entity e, position_c& p, const velocity_c& v)
+                    {
+                        p.x += v.x;
+                        p.y += v.y;
+                    });
+                }
+            };
+
+            ecs::registry w;
+            w.add_system<movement_system>();
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            e1.assign_component<position_c>(1, 2);
+            e1.assign_component<velocity_c>(3, 4);
+            e2.assign_component<position_c>(5, 6);
+            e2.assign_component<velocity_c>(7, 8);
+
+            w.process_systems();
+
+            REQUIRE(e1.get_component<position_c>().x == 1 + 3);
+            REQUIRE(e1.get_component<position_c>().y == 2 + 4);
+
+            REQUIRE(e2.get_component<position_c>().x == 5 + 7);
+            REQUIRE(e2.get_component<position_c>().y == 6 + 8);
         }
     }
 }

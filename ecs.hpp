@@ -13,6 +13,7 @@
 #include <tuple>
 #include <mutex>
 #include <memory>
+#include <vector>
 #include <limits>
 #include <utility>
 #include <exception>
@@ -31,6 +32,7 @@
 namespace ecs_hpp
 {
     class entity;
+    class system;
     class registry;
 
     using family_id = std::uint16_t;
@@ -277,6 +279,21 @@ namespace std
 
 // -----------------------------------------------------------------------------
 //
+// system
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    class system {
+    public:
+        virtual ~system() = default;
+        virtual void process(registry& owner) = 0;
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
 // registry
 //
 // -----------------------------------------------------------------------------
@@ -285,8 +302,8 @@ namespace ecs_hpp
 {
     class registry final {
     public:
-        registry();
-        ~registry() noexcept;
+        registry() = default;
+        ~registry() noexcept = default;
 
         entity create_entity();
         bool destroy_entity(const entity& ent);
@@ -332,6 +349,10 @@ namespace ecs_hpp
         void for_joined_components(F&& f);
         template < typename... Ts, typename F >
         void for_joined_components(F&& f) const;
+
+        template < typename T, typename... Args >
+        void add_system(Args&&... args);
+        void process_systems();
     private:
         template < typename T >
         detail::component_storage<T>* find_storage_() noexcept;
@@ -370,6 +391,9 @@ namespace ecs_hpp
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
         std::unordered_map<family_id, storage_uptr> storages_;
+
+        using system_uptr = std::unique_ptr<system>;
+        std::vector<system_uptr> systems_;
     };
 }
 
@@ -483,9 +507,6 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
-    inline registry::registry() = default;
-    inline registry::~registry() noexcept = default;
-
     inline entity registry::create_entity() {
         std::lock_guard<std::mutex> guard(mutex_);
         assert(last_entity_id_ < std::numeric_limits<entity_id>::max());
@@ -626,6 +647,19 @@ namespace ecs_hpp
     void registry::for_joined_components(F&& f) const {
         std::lock_guard<std::mutex> guard(mutex_);
         for_joined_components_impl_<Ts...>(std::forward<F>(f));
+    }
+
+    template < typename T, typename... Args >
+    void registry::add_system(Args&&... args) {
+        std::lock_guard<std::mutex> guard(mutex_);
+        systems_.emplace_back(
+            std::make_unique<T>(std::forward<Args>(args)...));
+    }
+
+    inline void registry::process_systems() {
+        for ( auto& s : systems_ ) {
+            s->process(*this);
+        }
     }
 
     template < typename T >
