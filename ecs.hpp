@@ -47,6 +47,23 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// utilities
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename T >
+        constexpr std::add_const_t<T>& as_const(T& t) noexcept {
+            return t;
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // detail::type_family
 //
 // -----------------------------------------------------------------------------
@@ -384,7 +401,7 @@ namespace ecs_hpp
     }
 
     inline bool entity::is_alive() const noexcept {
-        return const_cast<const world&>(owner_).is_entity_alive(*this);
+        return detail::as_const(owner_).is_entity_alive(*this);
     }
 
     template < typename T, typename... Args >
@@ -401,7 +418,7 @@ namespace ecs_hpp
 
     template < typename T >
     bool entity::exists_component() const noexcept {
-        return const_cast<const world&>(owner_).exists_component<T>(*this);
+        return detail::as_const(owner_).exists_component<T>(*this);
     }
 
     inline std::size_t entity::remove_all_components() noexcept {
@@ -415,7 +432,7 @@ namespace ecs_hpp
 
     template < typename T >
     const T& entity::get_component() const {
-        return const_cast<const world&>(owner_).get_component<T>(*this);
+        return detail::as_const(owner_).get_component<T>(*this);
     }
 
     template < typename T >
@@ -425,7 +442,7 @@ namespace ecs_hpp
 
     template < typename T >
     const T* entity::find_component() const noexcept {
-        return const_cast<const world&>(owner_).find_component<T>(*this);
+        return detail::as_const(owner_).find_component<T>(*this);
     }
 
     template < typename... Ts >
@@ -435,7 +452,7 @@ namespace ecs_hpp
 
     template < typename... Ts >
     std::tuple<const Ts&...> entity::get_components() const {
-        return const_cast<const world&>(owner_).get_components<Ts...>(*this);
+        return detail::as_const(owner_).get_components<Ts...>(*this);
     }
 
     template < typename... Ts >
@@ -445,7 +462,7 @@ namespace ecs_hpp
 
     template < typename... Ts >
     std::tuple<const Ts*...> entity::find_components() const noexcept {
-        return const_cast<const world&>(owner_).find_components<Ts...>(*this);
+        return detail::as_const(owner_).find_components<Ts...>(*this);
     }
 
     inline bool operator==(const entity& l, const entity& r) noexcept {
