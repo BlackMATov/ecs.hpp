@@ -22,8 +22,6 @@
 #include <algorithm>
 #include <functional>
 #include <type_traits>
-#include <unordered_set>
-#include <unordered_map>
 
 // -----------------------------------------------------------------------------
 //
@@ -686,7 +684,7 @@ namespace ecs_hpp
         detail::sparse_set<entity_id> entity_ids_;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
-        std::unordered_map<family_id, storage_uptr> storages_;
+        detail::sparse_map<family_id, storage_uptr> storages_;
 
         using system_uptr = std::unique_ptr<system>;
         std::vector<system_uptr> systems_;
@@ -972,21 +970,19 @@ namespace ecs_hpp
     template < typename T >
     detail::component_storage<T>* registry::find_storage_() noexcept {
         const auto family = detail::type_family<T>::id();
-        const auto iter = storages_.find(family);
-        if ( iter != storages_.end() ) {
-            return static_cast<detail::component_storage<T>*>(iter->second.get());
-        }
-        return nullptr;
+        using raw_storage_ptr = detail::component_storage<T>*;
+        return storages_.has(family)
+            ? static_cast<raw_storage_ptr>(storages_.get_value(family).get())
+            : nullptr;
     }
 
     template < typename T >
     const detail::component_storage<T>* registry::find_storage_() const noexcept {
         const auto family = detail::type_family<T>::id();
-        const auto iter = storages_.find(family);
-        if ( iter != storages_.end() ) {
-            return static_cast<const detail::component_storage<T>*>(iter->second.get());
-        }
-        return nullptr;
+        using raw_storage_ptr = const detail::component_storage<T>*;
+        return storages_.has(family)
+            ? static_cast<raw_storage_ptr>(storages_.get_value(family).get())
+            : nullptr;
     }
 
     template < typename T >
@@ -996,12 +992,11 @@ namespace ecs_hpp
             return *storage;
         }
         const auto family = detail::type_family<T>::id();
-        const auto emplace_r = storages_.emplace(std::make_pair(
+        storages_.emplace(
             family,
-            std::make_unique<detail::component_storage<T>>(*this)));
-        assert(emplace_r.second && "unexpected internal error");
+            std::make_unique<detail::component_storage<T>>(*this));
         return *static_cast<detail::component_storage<T>*>(
-            emplace_r.first->second.get());
+            storages_.get_value(family).get());
     }
 
     inline bool registry::is_entity_alive_impl_(const entity& ent) const noexcept {
@@ -1013,8 +1008,8 @@ namespace ecs_hpp
             return 0u;
         }
         std::size_t removed_components = 0u;
-        for ( auto& storage_p : storages_ ) {
-            if ( storage_p.second->remove(ent.id()) ) {
+        for ( const auto id : storages_ ) {
+            if ( storages_.get_value(id)->remove(ent.id()) ) {
                 ++removed_components;
             }
         }
