@@ -122,7 +122,8 @@ namespace ecs_hpp
             }
 
             iterator end() noexcept {
-                return dense_.begin() + size_;
+                using dt = typename std::iterator_traits<iterator>::difference_type;
+                return begin() + static_cast<dt>(size_);
             }
 
             const_iterator begin() const noexcept {
@@ -130,7 +131,8 @@ namespace ecs_hpp
             }
 
             const_iterator end() const noexcept {
-                return dense_.begin() + size_;
+                using dt = typename std::iterator_traits<const_iterator>::difference_type;
+                return begin() + static_cast<dt>(size_);
             }
 
             const_iterator cbegin() const noexcept {
@@ -138,7 +140,8 @@ namespace ecs_hpp
             }
 
             const_iterator cend() const noexcept {
-                return dense_.cbegin() + size_;
+                using dt = typename std::iterator_traits<const_iterator>::difference_type;
+                return cbegin() + static_cast<dt>(size_);
             }
         public:
             bool insert(const T v) {
