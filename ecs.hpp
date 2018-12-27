@@ -56,9 +56,61 @@ namespace ecs_hpp
 {
     namespace detail
     {
+        //
+        // as_const
+        //
+
         template < typename T >
         constexpr std::add_const_t<T>& as_const(T& t) noexcept {
             return t;
+        }
+
+        //
+        // tuple_tail
+        //
+
+        namespace impl
+        {
+            template < typename T, typename... Ts, std::size_t... Is >
+            std::tuple<Ts...> tuple_tail_impl(std::tuple<T, Ts...>&& t, std::index_sequence<Is...> iseq) {
+                (void)iseq;
+                return std::make_tuple(std::move(std::get<Is + 1u>(t))...);
+            }
+
+            template < typename T, typename... Ts, std::size_t... Is >
+            std::tuple<Ts...> tuple_tail_impl(const std::tuple<T, Ts...>& t, std::index_sequence<Is...> iseq) {
+                (void)iseq;
+                return std::make_tuple(std::get<Is + 1u>(t)...);
+            }
+        }
+
+        template < typename T, typename... Ts >
+        std::tuple<Ts...> tuple_tail(std::tuple<T, Ts...>&& t) {
+            return impl::tuple_tail_impl(std::move(t), std::make_index_sequence<sizeof...(Ts)>());
+        }
+
+        template < typename T, typename... Ts >
+        std::tuple<Ts...> tuple_tail(const std::tuple<T, Ts...>& t) {
+            return impl::tuple_tail_impl(t, std::make_index_sequence<sizeof...(Ts)>());
+        }
+
+        //
+        // tuple_contains
+        //
+
+        template < typename V >
+        bool tuple_contains(const std::tuple<>& t, const V& v) {
+            (void)t;
+            (void)v;
+            return false;
+        }
+
+        template < typename V, typename T, typename... Ts >
+        bool tuple_contains(const std::tuple<T, Ts...>& t, const V& v) {
+            if ( std::get<0>(t) == v ) {
+                return true;
+            }
+            return tuple_contains(tuple_tail(t), v);
         }
     }
 }
@@ -674,34 +726,38 @@ namespace ecs_hpp
         template < typename T
                  , typename... Ts
                  , typename F
-                 , typename S
-                 , typename... Ss
+                 , typename Ss
                  , typename... Cs >
         void for_joined_components_impl_(
             const entity& e,
             const F& f,
-            detail::component_storage<S>* s,
-            detail::component_storage<Ss>*... ss,
+            const Ss& ss,
             Cs&... cs);
 
         template < typename T
                  , typename... Ts
                  , typename F
-                 , typename S
-                 , typename... Ss
+                 , typename Ss
                  , typename... Cs >
         void for_joined_components_impl_(
             const entity& e,
             const F& f,
-            const detail::component_storage<S>* s,
-            const detail::component_storage<Ss>*... ss,
+            const Ss& ss,
             const Cs&... cs) const;
 
         template < typename F, typename... Cs >
-        void for_joined_components_impl_(const entity& e, const F& f, Cs&... cs);
+        void for_joined_components_impl_(
+            const entity& e,
+            const F& f,
+            const std::tuple<>& ss,
+            Cs&... cs);
 
         template < typename F, typename... Cs >
-        void for_joined_components_impl_(const entity& e, const F& f, const Cs&... cs) const;
+        void for_joined_components_impl_(
+            const entity& e,
+            const F& f,
+            const std::tuple<>& ss,
+            const Cs&... cs) const;
     private:
         entity_id last_entity_id_{0u};
         std::vector<entity_id> free_entity_ids_;
@@ -1044,57 +1100,59 @@ namespace ecs_hpp
             : nullptr;
     }
 
-    template < typename T, typename... Ts, typename F, std::size_t I, std::size_t... Is >
-    void registry::for_joined_components_impl_(F&& f, std::index_sequence<I, Is...> iseq) {
+    template < typename T
+             , typename... Ts
+             , typename F
+             , std::size_t I
+             , std::size_t... Is >
+    void registry::for_joined_components_impl_(
+        F&& f,
+        std::index_sequence<I, Is...> iseq)
+    {
         (void)iseq;
-        for_each_component<T>([
-            this,
-            f = std::forward<F>(f),
-            storages = std::make_tuple(find_storage_<Ts>()...)
-        ](const entity& e, T& t) mutable {
-            for_joined_components_impl_<Ts...>(
-                e,
-                f,
-                std::get<Is - 1>(storages)...,
-                t);
-        });
-    }
-
-    template < typename T, typename... Ts, typename F, std::size_t I, std::size_t... Is >
-    void registry::for_joined_components_impl_(F&& f, std::index_sequence<I, Is...> iseq) const {
-        (void)iseq;
-        for_each_component<T>([
-            this,
-            f = std::forward<F>(f),
-            storages = std::make_tuple(find_storage_<Ts>()...)
-        ](const entity& e, const T& t) mutable {
-            for_joined_components_impl_<Ts...>(
-                e,
-                f,
-                std::get<Is - 1>(storages)...,
-                t);
-        });
+        const auto ss = std::make_tuple(find_storage_<Ts>()...);
+        if ( !detail::tuple_contains(ss, nullptr) ) {
+            for_each_component<T>([this, &f, &ss](const entity& e, T& t) {
+                for_joined_components_impl_<Ts...>(e, f, ss, t);
+            });
+        }
     }
 
     template < typename T
              , typename... Ts
              , typename F
-             , typename S
-             , typename... Ss
+             , std::size_t I
+             , std::size_t... Is >
+    void registry::for_joined_components_impl_(
+        F&& f,
+        std::index_sequence<I, Is...> iseq) const
+    {
+        (void)iseq;
+        const auto ss = std::make_tuple(find_storage_<Ts>()...);
+        if ( !detail::tuple_contains(ss, nullptr) ) {
+            for_each_component<T>([this, &f, &ss](const entity& e, const T& t) {
+                detail::as_const(*this).for_joined_components_impl_<Ts...>(e, f, ss, t);
+            });
+        }
+    }
+
+    template < typename T
+             , typename... Ts
+             , typename F
+             , typename Ss
              , typename... Cs >
     void registry::for_joined_components_impl_(
         const entity& e,
         const F& f,
-        detail::component_storage<S>* s,
-        detail::component_storage<Ss>*... ss,
+        const Ss& ss,
         Cs&... cs)
     {
-        T* c = s->find(e.id());
+        T* c = std::get<0>(ss)->find(e.id());
         if ( c ) {
             for_joined_components_impl_<Ts...>(
                 e,
                 f,
-                std::forward<Ss>(ss)...,
+                detail::tuple_tail(ss),
                 cs...,
                 *c);
         }
@@ -1103,34 +1161,44 @@ namespace ecs_hpp
     template < typename T
              , typename... Ts
              , typename F
-             , typename S
-             , typename... Ss
+             , typename Ss
              , typename... Cs >
     void registry::for_joined_components_impl_(
         const entity& e,
         const F& f,
-        const detail::component_storage<S>* s,
-        const detail::component_storage<Ss>*... ss,
+        const Ss& ss,
         const Cs&... cs) const
     {
-        const T* c = s->find(e.id());
+        const T* c = std::get<0>(ss)->find(e.id());
         if ( c ) {
             for_joined_components_impl_<Ts...>(
                 e,
                 f,
-                std::forward<Ss>(ss)...,
+                detail::tuple_tail(ss),
                 cs...,
                 *c);
         }
     }
 
     template < typename F, typename... Cs >
-    void registry::for_joined_components_impl_(const entity& e, const F& f, Cs&... cs) {
+    void registry::for_joined_components_impl_(
+        const entity& e,
+        const F& f,
+        const std::tuple<>& ss,
+        Cs&... cs)
+    {
+        (void)ss;
         f(e, cs...);
     }
 
     template < typename F, typename... Cs >
-    void registry::for_joined_components_impl_(const entity& e, const F& f, const Cs&... cs) const {
+    void registry::for_joined_components_impl_(
+        const entity& e,
+        const F& f,
+        const std::tuple<>& ss,
+        const Cs&... cs) const
+    {
+        (void)ss;
         f(e, cs...);
     }
 }

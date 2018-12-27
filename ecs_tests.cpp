@@ -41,14 +41,31 @@ namespace
 
 TEST_CASE("detail") {
     SECTION("get_type_id") {
-        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
-        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
+        using namespace ecs::detail;
+        REQUIRE(type_family<position_c>::id() == 1u);
+        REQUIRE(type_family<position_c>::id() == 1u);
 
-        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
-        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
+        REQUIRE(type_family<velocity_c>::id() == 2u);
+        REQUIRE(type_family<velocity_c>::id() == 2u);
 
-        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
-        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
+        REQUIRE(type_family<position_c>::id() == 1u);
+        REQUIRE(type_family<velocity_c>::id() == 2u);
+    }
+    SECTION("tuple_tail") {
+        using namespace ecs::detail;
+        {
+            REQUIRE(tuple_tail(std::make_tuple(1, 2, 3)) == std::make_tuple(2, 3));
+            REQUIRE(tuple_tail(std::make_tuple(2, 3)) == std::make_tuple(3));
+            REQUIRE(tuple_tail(std::make_tuple(3)) == std::make_tuple());
+        }
+        {
+            const auto t1 = std::make_tuple(1);
+            const auto t2 = std::make_tuple(1, 2);
+            const auto t3 = std::make_tuple(1, 2, 3);
+            REQUIRE(tuple_tail(t1) == std::make_tuple());
+            REQUIRE(tuple_tail(t2) == std::make_tuple(2));
+            REQUIRE(tuple_tail(t3) == std::make_tuple(2, 3));
+        }
     }
     SECTION("sparse_set") {
         using namespace ecs::detail;
@@ -522,6 +539,15 @@ TEST_CASE("registry") {
                 REQUIRE(acc1 == e1.id() + e2.id());
                 REQUIRE(acc2 == 16);
             }
+        }
+        {
+            ecs::registry w;
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(1, 2);
+            w.for_joined_components<position_c, velocity_c>([](
+                ecs::entity, const position_c&, const velocity_c&)
+            {
+            });
         }
     }
     SECTION("systems") {
