@@ -319,7 +319,7 @@ namespace ecs_hpp
                 if ( keys_.has(k) ) {
                     return false;
                 }
-                values_.emplace(std::forward<Args>(args)...);
+                values_.emplace_back(std::forward<Args>(args)...);
                 try {
                     return keys_.insert(k);
                 } catch (...) {
@@ -432,7 +432,7 @@ namespace ecs_hpp
             void for_each_component(F&& f) const noexcept;
         private:
             registry& owner_;
-            std::unordered_map<entity_id, T> components_;
+            detail::sparse_map<entity_id, T> components_;
         };
 
         template < typename T >
@@ -442,48 +442,44 @@ namespace ecs_hpp
         template < typename T >
         template < typename... Args >
         void component_storage<T>::assign(entity_id id, Args&&... args) {
-            components_[id] = T(std::forward<Args>(args)...);
+            if ( !components_.emplace(id, std::forward<Args>(args)...) ) {
+                components_.get_value(id) = T(std::forward<Args>(args)...);
+            }
         }
 
         template < typename T >
         bool component_storage<T>::remove(entity_id id) noexcept {
-            return components_.erase(id) > 0u;
+            return components_.unordered_erase(id);
         }
 
         template < typename T >
         bool component_storage<T>::exists(entity_id id) const noexcept {
-            return components_.find(id) != components_.end();
+            return components_.has(id);
         }
 
         template < typename T >
         T* component_storage<T>::find(entity_id id) noexcept {
-            const auto iter = components_.find(id);
-            return iter != components_.end()
-                ? &iter->second
-                : nullptr;
+            return components_.find_value(id);
         }
 
         template < typename T >
         const T* component_storage<T>::find(entity_id id) const noexcept {
-            const auto iter = components_.find(id);
-            return iter != components_.end()
-                ? &iter->second
-                : nullptr;
+            return components_.find_value(id);
         }
 
         template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) noexcept {
-            for ( auto& component_pair : components_ ) {
-                f(entity(owner_, component_pair.first), component_pair.second);
+            for ( const auto id : components_ ) {
+                f(entity(owner_, id), components_.get_value(id));
             }
         }
 
         template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) const noexcept {
-            for ( auto& component_pair : components_ ) {
-                f(entity(owner_, component_pair.first), component_pair.second);
+            for ( const auto id : components_ ) {
+                f(entity(owner_, id), components_.get_value(id));
             }
         }
     }

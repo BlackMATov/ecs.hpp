@@ -139,14 +139,14 @@ TEST_CASE("detail") {
                 obj_t o{21u};
                 REQUIRE(m.insert(21u, o));
                 REQUIRE(m.insert(42u, obj_t{42u}));
-                REQUIRE(m.insert(84u, 84u));
+                REQUIRE(m.emplace(84u, 84u));
             }
 
             {
                 obj_t o{21u};
                 REQUIRE_FALSE(m.insert(21u, o));
                 REQUIRE_FALSE(m.insert(42u, obj_t{42u}));
-                REQUIRE_FALSE(m.insert(84u, 84u));
+                REQUIRE_FALSE(m.emplace(84u, 84u));
             }
 
             REQUIRE_FALSE(m.empty());
