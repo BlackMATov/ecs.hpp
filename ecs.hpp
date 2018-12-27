@@ -11,7 +11,6 @@
 #include <cstdint>
 
 #include <tuple>
-#include <mutex>
 #include <memory>
 #include <vector>
 #include <limits>
@@ -680,8 +679,6 @@ namespace ecs_hpp
         template < typename F, typename... Cs >
         void for_joined_components_impl_(const entity& e, F&& f, Cs&&... cs) const;
     private:
-        mutable std::mutex mutex_;
-
         entity_id last_entity_id_{0u};
         std::vector<entity_id> free_entity_ids_;
         detail::sparse_set<entity_id> entity_ids_;
@@ -805,7 +802,6 @@ namespace ecs_hpp
 namespace ecs_hpp
 {
     inline entity registry::create_entity() {
-        std::lock_guard<std::mutex> guard(mutex_);
         if ( !free_entity_ids_.empty() ) {
             auto ent = entity(*this, free_entity_ids_.back());
             entity_ids_.insert(ent.id());
@@ -820,7 +816,6 @@ namespace ecs_hpp
     }
 
     inline bool registry::destroy_entity(const entity& ent) {
-        std::lock_guard<std::mutex> guard(mutex_);
         remove_all_components_impl_(ent);
         if ( entity_ids_.unordered_erase(ent.id()) ) {
             free_entity_ids_.push_back(ent.id());
@@ -830,13 +825,11 @@ namespace ecs_hpp
     }
 
     inline bool registry::is_entity_alive(const entity& ent) const noexcept {
-        std::lock_guard<std::mutex> guard(mutex_);
         return is_entity_alive_impl_(ent);
     }
 
     template < typename T, typename... Args >
     bool registry::assign_component(const entity& ent, Args&&... args) {
-        std::lock_guard<std::mutex> guard(mutex_);
         if ( !is_entity_alive_impl_(ent) ) {
             return false;
         }
@@ -848,7 +841,6 @@ namespace ecs_hpp
 
     template < typename T >
     bool registry::remove_component(const entity& ent) {
-        std::lock_guard<std::mutex> guard(mutex_);
         if ( !is_entity_alive_impl_(ent) ) {
             return false;
         }
@@ -860,7 +852,6 @@ namespace ecs_hpp
 
     template < typename T >
     bool registry::exists_component(const entity& ent) const noexcept {
-        std::lock_guard<std::mutex> guard(mutex_);
         if ( !is_entity_alive_impl_(ent) ) {
             return false;
         }
@@ -871,13 +862,11 @@ namespace ecs_hpp
     }
 
     inline std::size_t registry::remove_all_components(const entity& ent) const noexcept {
-        std::lock_guard<std::mutex> guard(mutex_);
         return remove_all_components_impl_(ent);
     }
 
     template < typename T >
     T& registry::get_component(const entity& ent) {
-        std::lock_guard<std::mutex> guard(mutex_);
         T* component = find_component_impl_<T>(ent);
         if ( component ) {
             return *component;
@@ -887,7 +876,6 @@ namespace ecs_hpp
 
     template < typename T >
     const T& registry::get_component(const entity& ent) const {
-        std::lock_guard<std::mutex> guard(mutex_);
         const T* component = find_component_impl_<T>(ent);
         if ( component ) {
             return *component;
@@ -897,13 +885,11 @@ namespace ecs_hpp
 
     template < typename T >
     T* registry::find_component(const entity& ent) noexcept {
-        std::lock_guard<std::mutex> guard(mutex_);
         return find_component_impl_<T>(ent);
     }
 
     template < typename T >
     const T* registry::find_component(const entity& ent) const noexcept {
-        std::lock_guard<std::mutex> guard(mutex_);
         return find_component_impl_<T>(ent);
     }
 
@@ -929,7 +915,6 @@ namespace ecs_hpp
 
     template < typename T, typename F >
     void registry::for_each_component(F&& f) {
-        std::lock_guard<std::mutex> guard(mutex_);
         detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
             storage->for_each_component(std::forward<F>(f));
@@ -938,7 +923,6 @@ namespace ecs_hpp
 
     template < typename T, typename F >
     void registry::for_each_component(F&& f) const {
-        std::lock_guard<std::mutex> guard(mutex_);
         const detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
             storage->for_each_component(std::forward<F>(f));
@@ -947,19 +931,16 @@ namespace ecs_hpp
 
     template < typename... Ts, typename F >
     void registry::for_joined_components(F&& f) {
-        std::lock_guard<std::mutex> guard(mutex_);
         for_joined_components_impl_<Ts...>(std::forward<F>(f));
     }
 
     template < typename... Ts, typename F >
     void registry::for_joined_components(F&& f) const {
-        std::lock_guard<std::mutex> guard(mutex_);
         for_joined_components_impl_<Ts...>(std::forward<F>(f));
     }
 
     template < typename T, typename... Args >
     void registry::add_system(Args&&... args) {
-        std::lock_guard<std::mutex> guard(mutex_);
         systems_.emplace_back(
             std::make_unique<T>(std::forward<Args>(args)...));
     }
