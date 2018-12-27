@@ -530,7 +530,7 @@ TEST_CASE("registry") {
             public:
                 void process(ecs::registry& owner) override {
                     owner.for_joined_components<position_c, velocity_c>([](
-                        ecs::entity e, position_c& p, const velocity_c& v)
+                        ecs::entity, position_c& p, const velocity_c& v)
                     {
                         p.x += v.x;
                         p.y += v.y;
