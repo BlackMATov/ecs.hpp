@@ -682,7 +682,8 @@ namespace ecs_hpp
         mutable std::mutex mutex_;
 
         entity_id last_entity_id_{0u};
-        std::unordered_set<entity> entities_;
+        std::vector<entity_id> free_entity_ids_;
+        detail::sparse_set<entity_id> entity_ids_;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
         std::unordered_map<family_id, storage_uptr> storages_;
@@ -804,16 +805,27 @@ namespace ecs_hpp
 {
     inline entity registry::create_entity() {
         std::lock_guard<std::mutex> guard(mutex_);
+        if ( !free_entity_ids_.empty() ) {
+            auto ent = entity(*this, free_entity_ids_.back());
+            entity_ids_.insert(ent.id());
+            free_entity_ids_.pop_back();
+            return ent;
+
+        }
         assert(last_entity_id_ < std::numeric_limits<entity_id>::max());
         auto ent = entity(*this, ++last_entity_id_);
-        entities_.insert(ent);
+        entity_ids_.insert(ent.id());
         return ent;
     }
 
     inline bool registry::destroy_entity(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
         remove_all_components_impl_(ent);
-        return entities_.erase(ent) > 0u;
+        if ( entity_ids_.unordered_erase(ent.id()) ) {
+            free_entity_ids_.push_back(ent.id());
+            return true;
+        }
+        return false;
     }
 
     inline bool registry::is_entity_alive(const entity& ent) const noexcept {
@@ -993,7 +1005,7 @@ namespace ecs_hpp
     }
 
     inline bool registry::is_entity_alive_impl_(const entity& ent) const noexcept {
-        return entities_.count(ent) > 0u;
+        return entity_ids_.has(ent.id());
     }
 
     inline std::size_t registry::remove_all_components_impl_(const entity& ent) const noexcept {
@@ -1027,8 +1039,8 @@ namespace ecs_hpp
 
     template < typename... Ts, typename F >
     void registry::for_joined_components_impl_(F&& f) {
-        for ( const auto& e : entities_ ) {
-            for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
+        for ( const auto id : entity_ids_ ) {
+            for_joined_components_impl_<Ts...>(entity(*this, id), std::forward<F>(f));
         }
     }
 
@@ -1051,8 +1063,8 @@ namespace ecs_hpp
 
     template < typename... Ts, typename F >
     void registry::for_joined_components_impl_(F&& f) const {
-        for ( const auto& e : entities_ ) {
-            for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
+        for ( const auto id : entity_ids_ ) {
+            for_joined_components_impl_<Ts...>(entity(const_cast<registry&>(*this), id), std::forward<F>(f));
         }
     }
 
