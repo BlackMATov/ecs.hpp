@@ -72,13 +72,19 @@ namespace ecs_hpp
         namespace impl
         {
             template < typename T, typename... Ts, std::size_t... Is >
-            std::tuple<Ts...> tuple_tail_impl(std::tuple<T, Ts...>&& t, std::index_sequence<Is...> iseq) {
+            std::tuple<Ts...> tuple_tail_impl(
+                std::tuple<T, Ts...>&& t,
+                std::index_sequence<Is...> iseq)
+            {
                 (void)iseq;
                 return std::make_tuple(std::move(std::get<Is + 1u>(t))...);
             }
 
             template < typename T, typename... Ts, std::size_t... Is >
-            std::tuple<Ts...> tuple_tail_impl(const std::tuple<T, Ts...>& t, std::index_sequence<Is...> iseq) {
+            std::tuple<Ts...> tuple_tail_impl(
+                const std::tuple<T, Ts...>& t,
+                std::index_sequence<Is...> iseq)
+            {
                 (void)iseq;
                 return std::make_tuple(std::get<Is + 1u>(t)...);
             }
@@ -86,12 +92,16 @@ namespace ecs_hpp
 
         template < typename T, typename... Ts >
         std::tuple<Ts...> tuple_tail(std::tuple<T, Ts...>&& t) {
-            return impl::tuple_tail_impl(std::move(t), std::make_index_sequence<sizeof...(Ts)>());
+            return impl::tuple_tail_impl(
+                std::move(t),
+                std::make_index_sequence<sizeof...(Ts)>());
         }
 
         template < typename T, typename... Ts >
         std::tuple<Ts...> tuple_tail(const std::tuple<T, Ts...>& t) {
-            return impl::tuple_tail_impl(t, std::make_index_sequence<sizeof...(Ts)>());
+            return impl::tuple_tail_impl(
+                t,
+                std::make_index_sequence<sizeof...(Ts)>());
         }
 
         //
@@ -604,7 +614,7 @@ namespace ecs_hpp
         template < typename... Ts >
         std::tuple<const Ts*...> find_components() const noexcept;
     private:
-        registry& owner_;
+        registry* owner_;
         entity_id id_{0u};
     };
 
@@ -780,14 +790,14 @@ namespace ecs_hpp
 namespace ecs_hpp
 {
     inline entity::entity(registry& owner)
-    : owner_(owner) {}
+    : owner_(&owner) {}
 
     inline entity::entity(registry& owner, entity_id id)
-    : owner_(owner)
+    : owner_(&owner)
     , id_(id) {}
 
     inline const registry& entity::owner() const noexcept {
-        return owner_;
+        return *owner_;
     }
 
     inline entity_id entity::id() const noexcept {
@@ -795,72 +805,72 @@ namespace ecs_hpp
     }
 
     inline bool entity::destroy() {
-        return owner_.destroy_entity(*this);
+        return (*owner_).destroy_entity(*this);
     }
 
     inline bool entity::is_alive() const noexcept {
-        return detail::as_const(owner_).is_entity_alive(*this);
+        return detail::as_const(*owner_).is_entity_alive(*this);
     }
 
     template < typename T, typename... Args >
     bool entity::assign_component(Args&&... args) {
-        return owner_.assign_component<T>(
+        return (*owner_).assign_component<T>(
             *this,
             std::forward<Args>(args)...);
     }
 
     template < typename T >
     bool entity::remove_component() {
-        return owner_.remove_component<T>(*this);
+        return (*owner_).remove_component<T>(*this);
     }
 
     template < typename T >
     bool entity::exists_component() const noexcept {
-        return detail::as_const(owner_).exists_component<T>(*this);
+        return detail::as_const(*owner_).exists_component<T>(*this);
     }
 
     inline std::size_t entity::remove_all_components() noexcept {
-        return owner_.remove_all_components(*this);
+        return (*owner_).remove_all_components(*this);
     }
 
     template < typename T >
     T& entity::get_component() {
-        return owner_.get_component<T>(*this);
+        return (*owner_).get_component<T>(*this);
     }
 
     template < typename T >
     const T& entity::get_component() const {
-        return detail::as_const(owner_).get_component<T>(*this);
+        return detail::as_const(*owner_).get_component<T>(*this);
     }
 
     template < typename T >
     T* entity::find_component() noexcept {
-        return owner_.find_component<T>(*this);
+        return (*owner_).find_component<T>(*this);
     }
 
     template < typename T >
     const T* entity::find_component() const noexcept {
-        return detail::as_const(owner_).find_component<T>(*this);
+        return detail::as_const(*owner_).find_component<T>(*this);
     }
 
     template < typename... Ts >
     std::tuple<Ts&...> entity::get_components() {
-        return owner_.get_components<Ts...>(*this);
+        return (*owner_).get_components<Ts...>(*this);
     }
 
     template < typename... Ts >
     std::tuple<const Ts&...> entity::get_components() const {
-        return detail::as_const(owner_).get_components<Ts...>(*this);
+        return detail::as_const(*owner_).get_components<Ts...>(*this);
     }
 
     template < typename... Ts >
     std::tuple<Ts*...> entity::find_components() noexcept {
-        return owner_.find_components<Ts...>(*this);
+        return (*owner_).find_components<Ts...>(*this);
     }
 
     template < typename... Ts >
     std::tuple<const Ts*...> entity::find_components() const noexcept {
-        return detail::as_const(owner_).find_components<Ts...>(*this);
+        return detail::as_const(*owner_).find_components<Ts...>(*this);
     }
 
     inline bool operator==(const entity& l, const entity& r) noexcept {
