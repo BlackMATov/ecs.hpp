@@ -41,14 +41,31 @@ namespace
 
 TEST_CASE("detail") {
     SECTION("get_type_id") {
-        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
-        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
+        using namespace ecs::detail;
+        REQUIRE(type_family<position_c>::id() == 1u);
+        REQUIRE(type_family<position_c>::id() == 1u);
 
-        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
-        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
+        REQUIRE(type_family<velocity_c>::id() == 2u);
+        REQUIRE(type_family<velocity_c>::id() == 2u);
 
-        REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
-        REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
+        REQUIRE(type_family<position_c>::id() == 1u);
+        REQUIRE(type_family<velocity_c>::id() == 2u);
+    }
+    SECTION("tuple_tail") {
+        using namespace ecs::detail;
+        {
+            REQUIRE(tuple_tail(std::make_tuple(1, 2, 3)) == std::make_tuple(2, 3));
+            REQUIRE(tuple_tail(std::make_tuple(2, 3)) == std::make_tuple(3));
+            REQUIRE(tuple_tail(std::make_tuple(3)) == std::make_tuple());
+        }
+        {
+            const auto t1 = std::make_tuple(1);
+            const auto t2 = std::make_tuple(1, 2);
+            const auto t3 = std::make_tuple(1, 2, 3);
+            REQUIRE(tuple_tail(t1) == std::make_tuple());
+            REQUIRE(tuple_tail(t2) == std::make_tuple(2));
+            REQUIRE(tuple_tail(t3) == std::make_tuple(2, 3));
+        }
     }
     SECTION("sparse_set") {
         using namespace ecs::detail;
@@ -71,6 +88,7 @@ TEST_CASE("detail") {
             REQUIRE(s.has(42u));
             REQUIRE_FALSE(s.has(84u));
 
+            REQUIRE(s.find(42u) == s.begin());
             REQUIRE(s.find_index(42u).second);
             REQUIRE(s.find_index(42u).first == 0u);
             REQUIRE(s.get_index(42u) == 0u);
@@ -231,6 +249,14 @@ TEST_CASE("registry") {
             REQUIRE_FALSE(w.destroy_entity(e1));
             REQUIRE_FALSE(w.destroy_entity(e2));
         }
+        {
+            ecs::registry w;
+
+            const auto e1 = w.create_entity();
+            w.destroy_entity(e1);
+            const auto e2 = w.create_entity();
+            REQUIRE(e1 == e2);
+        }
     }
     SECTION("component_assigning") {
         {
@@ -354,6 +380,14 @@ TEST_CASE("registry") {
                 REQUIRE_FALSE(ww.find_component<position_c>(e1));
                 REQUIRE_FALSE(ww.find_component<velocity_c>(e2));
             }
+        }
+        {
+            ecs::registry w;
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(1, 2);
+            e1.assign_component<position_c>(3, 4);
+            REQUIRE(e1.get_component<position_c>().x == 3);
+            REQUIRE(e1.get_component<position_c>().y == 4);
         }
         {
             ecs::registry w;
@@ -506,6 +540,15 @@ TEST_CASE("registry") {
                 REQUIRE(acc2 == 16);
             }
         }
+        {
+            ecs::registry w;
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(1, 2);
+            w.for_joined_components<position_c, velocity_c>([](
+                ecs::entity, const position_c&, const velocity_c&)
+            {
+            });
+        }
     }
     SECTION("systems") {
         {
@@ -513,7 +556,7 @@ TEST_CASE("registry") {
             public:
                 void process(ecs::registry& owner) override {
                     owner.for_joined_components<position_c, velocity_c>([](
-                        ecs::entity e, position_c& p, const velocity_c& v)
+                        ecs::entity, position_c& p, const velocity_c& v)
                     {
                         p.x += v.x;
                         p.y += v.y;
