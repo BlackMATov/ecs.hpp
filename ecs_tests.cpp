@@ -50,6 +50,149 @@ TEST_CASE("detail") {
         REQUIRE(ecs::detail::type_family<position_c>::id() == 1u);
         REQUIRE(ecs::detail::type_family<velocity_c>::id() == 2u);
     }
+    SECTION("sparse_set") {
+        using namespace ecs::detail;
+        {
+            sparse_set<unsigned> s;
+
+            REQUIRE(s.empty());
+            REQUIRE_FALSE(s.size());
+            REQUIRE(s.capacity() == 0u);
+            REQUIRE_FALSE(s.has(42u));
+            REQUIRE(s.find(42u) == s.end());
+            REQUIRE_FALSE(s.find_index(42u).second);
+            REQUIRE_THROWS(s.get_index(42u));
+
+            REQUIRE(s.insert(42u));
+
+            REQUIRE_FALSE(s.empty());
+            REQUIRE(s.size() == 1u);
+            REQUIRE(s.capacity() == 43u);
+            REQUIRE(s.has(42u));
+            REQUIRE_FALSE(s.has(84u));
+
+            REQUIRE(s.find_index(42u).second);
+            REQUIRE(s.find_index(42u).first == 0u);
+            REQUIRE(s.get_index(42u) == 0u);
+
+            s.clear();
+
+            REQUIRE(s.empty());
+            REQUIRE_FALSE(s.size());
+            REQUIRE_FALSE(s.has(42u));
+
+            REQUIRE(s.insert(84u));
+            REQUIRE_FALSE(s.insert(84u));
+
+            REQUIRE(s.has(84u));
+            REQUIRE_FALSE(s.unordered_erase(42u));
+            REQUIRE(s.unordered_erase(84u));
+            REQUIRE_FALSE(s.has(84u));
+            REQUIRE(s.empty());
+            REQUIRE_FALSE(s.size());
+            REQUIRE(s.capacity() == 43u * 2);
+
+            s.insert(42u);
+            s.insert(84u);
+
+            REQUIRE(s.has(42u));
+            REQUIRE(s.has(84u));
+            REQUIRE(s.size() == 2u);
+            REQUIRE(s.find_index(42u).second);
+            REQUIRE(s.find_index(42u).first == 0u);
+            REQUIRE(s.find_index(84u).second);
+            REQUIRE(s.find_index(84u).first == 1u);
+            REQUIRE(s.get_index(42u) == 0u);
+            REQUIRE(s.get_index(84u) == 1u);
+
+            REQUIRE(s.unordered_erase(42u));
+
+            REQUIRE_FALSE(s.has(42u));
+            REQUIRE(s.has(84u));
+            REQUIRE(s.size() == 1u);
+            REQUIRE(s.find_index(84u).second);
+            REQUIRE(s.find_index(84u).first == 0u);
+            REQUIRE_THROWS(s.get_index(42u));
+            REQUIRE(s.get_index(84u) == 0u);
+        }
+    }
+    SECTION("sparse_map") {
+        using namespace ecs::detail;
+        {
+            struct obj_t {
+                int x;
+                obj_t(int nx) : x(nx) {}
+            };
+
+            sparse_map<unsigned, obj_t> m;
+
+            REQUIRE(m.empty());
+            REQUIRE_FALSE(m.size());
+            REQUIRE(m.capacity() == 0u);
+            REQUIRE_FALSE(m.has(42u));
+            REQUIRE_THROWS(m.get_value(42u));
+            REQUIRE_THROWS(as_const(m).get_value(42u));
+            REQUIRE_FALSE(m.find_value(42u));
+            REQUIRE_FALSE(as_const(m).find_value(42u));
+
+            {
+                obj_t o{21u};
+                REQUIRE(m.insert(21u, o));
+                REQUIRE(m.insert(42u, obj_t{42u}));
+                REQUIRE(m.emplace(84u, 84u));
+            }
+
+            {
+                obj_t o{21u};
+                REQUIRE_FALSE(m.insert(21u, o));
+                REQUIRE_FALSE(m.insert(42u, obj_t{42u}));
+                REQUIRE_FALSE(m.emplace(84u, 84u));
+            }
+
+            REQUIRE_FALSE(m.empty());
+            REQUIRE(m.size() == 3u);
+            REQUIRE(m.capacity() >= 3u);
+            REQUIRE(m.has(21u));
+            REQUIRE(m.has(42u));
+            REQUIRE(m.has(84u));
+            REQUIRE_FALSE(m.has(11u));
+            REQUIRE_FALSE(m.has(25u));
+            REQUIRE_FALSE(m.has(99u));
+
+            REQUIRE(m.get_value(21u).x == 21u);
+            REQUIRE(m.get_value(42u).x == 42u);
+            REQUIRE(m.get_value(84u).x == 84u);
+            REQUIRE(as_const(m).get_value(84u).x == 84u);
+            REQUIRE_THROWS(m.get_value(11u));
+            REQUIRE_THROWS(m.get_value(25u));
+            REQUIRE_THROWS(m.get_value(99u));
+            REQUIRE_THROWS(as_const(m).get_value(99u));
+
+            REQUIRE(m.find_value(21u)->x == 21u);
+            REQUIRE(m.find_value(42u)->x == 42u);
+            REQUIRE(m.find_value(84u)->x == 84u);
+            REQUIRE(as_const(m).find_value(84u)->x == 84u);
+            REQUIRE_FALSE(m.find_value(11u));
+            REQUIRE_FALSE(m.find_value(25u));
+            REQUIRE_FALSE(m.find_value(99u));
+            REQUIRE_FALSE(as_const(m).find_value(99u));
+
+            REQUIRE(m.unordered_erase(42u));
+            REQUIRE_FALSE(m.unordered_erase(42u));
+
+            REQUIRE(m.has(21u));
+            REQUIRE_FALSE(m.has(42u));
+            REQUIRE(m.has(84u));
+            REQUIRE(m.size() == 2u);
+
+            m.clear();
+            REQUIRE(m.empty());
+            REQUIRE_FALSE(m.size());
+            REQUIRE_FALSE(m.has(21u));
+            REQUIRE_FALSE(m.has(42u));
+            REQUIRE_FALSE(m.has(84u));
+        }
+    }
 }
 
 TEST_CASE("registry") {

@@ -16,12 +16,12 @@
 #include <vector>
 #include <limits>
 #include <utility>
+#include <iterator>
 #include <exception>
 #include <stdexcept>
+#include <algorithm>
 #include <functional>
 #include <type_traits>
-#include <unordered_set>
-#include <unordered_map>
 
 // -----------------------------------------------------------------------------
 //
@@ -100,6 +100,306 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// detail::sparse_set
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename T >
+        class sparse_set final {
+        public:
+            static_assert(
+                std::is_unsigned<T>::value,
+                "sparse_set<T> can contain an unsigned integers only");
+            using iterator = typename std::vector<T>::iterator;
+            using const_iterator = typename std::vector<T>::const_iterator;
+        public:
+            iterator begin() noexcept {
+                return dense_.begin();
+            }
+
+            iterator end() noexcept {
+                using dt = typename std::iterator_traits<iterator>::difference_type;
+                return begin() + static_cast<dt>(size_);
+            }
+
+            const_iterator begin() const noexcept {
+                return dense_.begin();
+            }
+
+            const_iterator end() const noexcept {
+                using dt = typename std::iterator_traits<const_iterator>::difference_type;
+                return begin() + static_cast<dt>(size_);
+            }
+
+            const_iterator cbegin() const noexcept {
+                return dense_.cbegin();
+            }
+
+            const_iterator cend() const noexcept {
+                using dt = typename std::iterator_traits<const_iterator>::difference_type;
+                return cbegin() + static_cast<dt>(size_);
+            }
+        public:
+            bool insert(const T v) {
+                if ( has(v) ) {
+                    return false;
+                }
+                if ( v >= capacity_ ) {
+                    reserve(new_capacity_for_(v + 1u));
+                }
+                dense_[size_] = v;
+                sparse_[v] = size_;
+                ++size_;
+                return true;
+            }
+
+            bool unordered_erase(const T v) noexcept {
+                if ( !has(v) ) {
+                    return false;
+                }
+                const std::size_t index = sparse_[v];
+                const T last = dense_[size_ - 1u];
+                dense_[index] = last;
+                sparse_[last] = index;
+                --size_;
+                return true;
+            }
+
+            void clear() noexcept {
+                size_ = 0u;
+            }
+
+            bool has(const T v) const noexcept {
+                return v < capacity_
+                    && sparse_[v] < size_
+                    && dense_[sparse_[v]] == v;
+            }
+
+            const_iterator find(const T v) const noexcept {
+                return has(v)
+                    ? begin() + sparse_[v]
+                    : end();
+            }
+
+            std::size_t get_index(const T v) const {
+                const auto p = find_index(v);
+                if ( p.second ) {
+                    return p.first;
+                }
+                throw std::out_of_range("sparse_set<T>");
+            }
+
+            std::pair<std::size_t,bool> find_index(const T v) const noexcept {
+                return has(v)
+                    ? std::make_pair(sparse_[v], true)
+                    : std::make_pair(std::size_t(-1), false);
+            }
+
+            bool empty() const noexcept {
+                return size_ == 0u;
+            }
+
+            void reserve(std::size_t ncapacity) {
+                if ( ncapacity > capacity_ ) {
+                    std::vector<T> ndense(ncapacity);
+                    std::vector<std::size_t> nsparse(ncapacity);
+                    std::copy(dense_.begin(), dense_.end(), ndense.begin());
+                    std::copy(sparse_.begin(), sparse_.end(), nsparse.begin());
+                    ndense.swap(dense_);
+                    nsparse.swap(sparse_);
+                    capacity_ = ncapacity;
+                }
+            }
+
+            std::size_t size() const noexcept {
+                return size_;
+            }
+
+            std::size_t max_size() const noexcept {
+                return std::min(dense_.max_size(), sparse_.max_size());
+            }
+
+            std::size_t capacity() const noexcept {
+                return capacity_;
+            }
+        private:
+            std::size_t new_capacity_for_(std::size_t nsize) const {
+                const std::size_t ms = max_size();
+                if ( nsize > ms ) {
+                    throw std::length_error("sparse_set<T>");
+                }
+                if ( capacity_ >= ms / 2u ) {
+                    return ms;
+                }
+                return std::max(capacity_ * 2u, nsize);
+            }
+        private:
+            std::vector<T> dense_;
+            std::vector<std::size_t> sparse_;
+            std::size_t size_{0u};
+            std::size_t capacity_{0u};
+        };
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
+// detail::sparse_map
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename K, typename T >
+        class sparse_map final {
+        public:
+            static_assert(
+                std::is_unsigned<K>::value,
+                "sparse_map<K,T> can contain unsigned integers keys only");
+            using iterator = typename std::vector<K>::iterator;
+            using const_iterator = typename std::vector<K>::const_iterator;
+        public:
+            iterator begin() noexcept {
+                return keys_.begin();
+            }
+
+            iterator end() noexcept {
+                return keys_.end();
+            }
+
+            const_iterator begin() const noexcept {
+                return keys_.begin();
+            }
+
+            const_iterator end() const noexcept {
+                return keys_.end();
+            }
+
+            const_iterator cbegin() const noexcept {
+                return keys_.cbegin();
+            }
+
+            const_iterator cend() const noexcept {
+                return keys_.cend();
+            }
+        public:
+            bool insert(const K k, const T& v) {
+                if ( keys_.has(k) ) {
+                    return false;
+                }
+                values_.push_back(v);
+                try {
+                    return keys_.insert(k);
+                } catch (...) {
+                    values_.pop_back();
+                    throw;
+                }
+            }
+
+            bool insert(const K k, T&& v) {
+                if ( keys_.has(k) ) {
+                    return false;
+                }
+                values_.push_back(std::move(v));
+                try {
+                    return keys_.insert(k);
+                } catch (...) {
+                    values_.pop_back();
+                    throw;
+                }
+            }
+
+            template < typename... Args >
+            bool emplace(const K k, Args&&... args) {
+                if ( keys_.has(k) ) {
+                    return false;
+                }
+                values_.emplace_back(std::forward<Args>(args)...);
+                try {
+                    return keys_.insert(k);
+                } catch (...) {
+                    values_.pop_back();
+                    throw;
+                }
+            }
+
+            bool unordered_erase(const K k) {
+                if ( !keys_.has(k) ) {
+                    return false;
+                }
+                const std::size_t index = keys_.get_index(k);
+                values_[index] = std::move(values_.back());
+                values_.pop_back();
+                keys_.unordered_erase(k);
+                return true;
+            }
+
+            void clear() noexcept {
+                keys_.clear();
+                values_.clear();
+            }
+
+            bool has(const K k) const noexcept {
+                return keys_.has(k);
+            }
+
+            T& get_value(const K k) {
+                return values_[keys_.get_index(k)];
+            }
+
+            const T& get_value(const K k) const {
+                return values_[keys_.get_index(k)];
+            }
+
+            T* find_value(const K k) noexcept {
+                const auto ip = keys_.find_index(k);
+                return ip.second
+                    ? &values_[ip.first]
+                    : nullptr;
+            }
+
+            const T* find_value(const K k) const noexcept {
+                const auto ip = keys_.find_index(k);
+                return ip.second
+                    ? &values_[ip.first]
+                    : nullptr;
+            }
+
+            bool empty() const noexcept {
+                return values_.empty();
+            }
+
+            void reserve(std::size_t ncapacity) {
+                keys_.reserve(ncapacity);
+                values_.reserve(ncapacity);
+            }
+
+            std::size_t size() const noexcept {
+                return values_.size();
+            }
+
+            std::size_t max_size() const noexcept {
+                return std::min(keys_.max_size(), values_.max_size());
+            }
+
+            std::size_t capacity() const noexcept {
+                return values_.capacity();
+            }
+        private:
+            sparse_set<K> keys_;
+            std::vector<T> values_;
+        };
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // detail::component_storage
 //
 // -----------------------------------------------------------------------------
@@ -133,7 +433,7 @@ namespace ecs_hpp
             void for_each_component(F&& f) const noexcept;
         private:
             registry& owner_;
-            std::unordered_map<entity_id, T> components_;
+            detail::sparse_map<entity_id, T> components_;
         };
 
         template < typename T >
@@ -143,48 +443,44 @@ namespace ecs_hpp
         template < typename T >
         template < typename... Args >
         void component_storage<T>::assign(entity_id id, Args&&... args) {
-            components_[id] = T(std::forward<Args>(args)...);
+            if ( !components_.emplace(id, std::forward<Args>(args)...) ) {
+                components_.get_value(id) = T(std::forward<Args>(args)...);
+            }
         }
 
         template < typename T >
         bool component_storage<T>::remove(entity_id id) noexcept {
-            return components_.erase(id) > 0u;
+            return components_.unordered_erase(id);
         }
 
         template < typename T >
         bool component_storage<T>::exists(entity_id id) const noexcept {
-            return components_.find(id) != components_.end();
+            return components_.has(id);
         }
 
         template < typename T >
         T* component_storage<T>::find(entity_id id) noexcept {
-            const auto iter = components_.find(id);
-            return iter != components_.end()
-                ? &iter->second
-                : nullptr;
+            return components_.find_value(id);
         }
 
         template < typename T >
         const T* component_storage<T>::find(entity_id id) const noexcept {
-            const auto iter = components_.find(id);
-            return iter != components_.end()
-                ? &iter->second
-                : nullptr;
+            return components_.find_value(id);
         }
 
         template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) noexcept {
-            for ( auto& component_pair : components_ ) {
-                f(entity(owner_, component_pair.first), component_pair.second);
+            for ( const auto id : components_ ) {
+                f(entity(owner_, id), components_.get_value(id));
             }
         }
 
         template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) const noexcept {
-            for ( auto& component_pair : components_ ) {
-                f(entity(owner_, component_pair.first), component_pair.second);
+            for ( const auto id : components_ ) {
+                f(entity(owner_, id), components_.get_value(id));
             }
         }
     }
@@ -387,10 +683,11 @@ namespace ecs_hpp
         mutable std::mutex mutex_;
 
         entity_id last_entity_id_{0u};
-        std::unordered_set<entity> entities_;
+        std::vector<entity_id> free_entity_ids_;
+        detail::sparse_set<entity_id> entity_ids_;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
-        std::unordered_map<family_id, storage_uptr> storages_;
+        detail::sparse_map<family_id, storage_uptr> storages_;
 
         using system_uptr = std::unique_ptr<system>;
         std::vector<system_uptr> systems_;
@@ -509,16 +806,27 @@ namespace ecs_hpp
 {
     inline entity registry::create_entity() {
         std::lock_guard<std::mutex> guard(mutex_);
+        if ( !free_entity_ids_.empty() ) {
+            auto ent = entity(*this, free_entity_ids_.back());
+            entity_ids_.insert(ent.id());
+            free_entity_ids_.pop_back();
+            return ent;
+
+        }
         assert(last_entity_id_ < std::numeric_limits<entity_id>::max());
         auto ent = entity(*this, ++last_entity_id_);
-        entities_.insert(ent);
+        entity_ids_.insert(ent.id());
         return ent;
     }
 
     inline bool registry::destroy_entity(const entity& ent) {
         std::lock_guard<std::mutex> guard(mutex_);
         remove_all_components_impl_(ent);
-        return entities_.erase(ent) > 0u;
+        if ( entity_ids_.unordered_erase(ent.id()) ) {
+            free_entity_ids_.push_back(ent.id());
+            return true;
+        }
+        return false;
     }
 
     inline bool registry::is_entity_alive(const entity& ent) const noexcept {
@@ -665,21 +973,19 @@ namespace ecs_hpp
     template < typename T >
     detail::component_storage<T>* registry::find_storage_() noexcept {
         const auto family = detail::type_family<T>::id();
-        const auto iter = storages_.find(family);
-        if ( iter != storages_.end() ) {
-            return static_cast<detail::component_storage<T>*>(iter->second.get());
-        }
-        return nullptr;
+        using raw_storage_ptr = detail::component_storage<T>*;
+        return storages_.has(family)
+            ? static_cast<raw_storage_ptr>(storages_.get_value(family).get())
+            : nullptr;
     }
 
     template < typename T >
     const detail::component_storage<T>* registry::find_storage_() const noexcept {
         const auto family = detail::type_family<T>::id();
-        const auto iter = storages_.find(family);
-        if ( iter != storages_.end() ) {
-            return static_cast<const detail::component_storage<T>*>(iter->second.get());
-        }
-        return nullptr;
+        using raw_storage_ptr = const detail::component_storage<T>*;
+        return storages_.has(family)
+            ? static_cast<raw_storage_ptr>(storages_.get_value(family).get())
+            : nullptr;
     }
 
     template < typename T >
@@ -689,16 +995,15 @@ namespace ecs_hpp
             return *storage;
         }
         const auto family = detail::type_family<T>::id();
-        const auto emplace_r = storages_.emplace(std::make_pair(
+        storages_.emplace(
             family,
-            std::make_unique<detail::component_storage<T>>(*this)));
-        assert(emplace_r.second && "unexpected internal error");
+            std::make_unique<detail::component_storage<T>>(*this));
         return *static_cast<detail::component_storage<T>*>(
-            emplace_r.first->second.get());
+            storages_.get_value(family).get());
     }
 
     inline bool registry::is_entity_alive_impl_(const entity& ent) const noexcept {
-        return entities_.count(ent) > 0u;
+        return entity_ids_.has(ent.id());
     }
 
     inline std::size_t registry::remove_all_components_impl_(const entity& ent) const noexcept {
@@ -706,8 +1011,8 @@ namespace ecs_hpp
             return 0u;
         }
         std::size_t removed_components = 0u;
-        for ( auto& storage_p : storages_ ) {
-            if ( storage_p.second->remove(ent.id()) ) {
+        for ( const auto id : storages_ ) {
+            if ( storages_.get_value(id)->remove(ent.id()) ) {
                 ++removed_components;
             }
         }
@@ -732,8 +1037,8 @@ namespace ecs_hpp
 
     template < typename... Ts, typename F >
     void registry::for_joined_components_impl_(F&& f) {
-        for ( const auto& e : entities_ ) {
-            for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
+        for ( const auto id : entity_ids_ ) {
+            for_joined_components_impl_<Ts...>(entity(*this, id), std::forward<F>(f));
         }
     }
 
@@ -756,8 +1061,8 @@ namespace ecs_hpp
 
     template < typename... Ts, typename F >
     void registry::for_joined_components_impl_(F&& f) const {
-        for ( const auto& e : entities_ ) {
-            for_joined_components_impl_<Ts...>(e, std::forward<F>(f));
+        for ( const auto id : entity_ids_ ) {
+            for_joined_components_impl_<Ts...>(entity(const_cast<registry&>(*this), id), std::forward<F>(f));
         }
     }
 
