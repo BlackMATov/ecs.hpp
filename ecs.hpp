@@ -37,6 +37,12 @@ namespace ecs_hpp
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
 
+    const std::size_t entity_id_index_bits = 22;
+    const std::size_t entity_id_index_mask = (1 << entity_id_index_bits) - 1;
+
+    const std::size_t entity_id_version_bits = 10;
+    const std::size_t entity_id_version_mask = (1 << entity_id_version_bits) - 1;
+
     static_assert(
         std::is_unsigned<family_id>::value,
         "ecs_hpp::family_id must be an unsigned integer");
@@ -44,6 +50,22 @@ namespace ecs_hpp
     static_assert(
         std::is_unsigned<entity_id>::value,
         "ecs_hpp::entity_id must be an unsigned integer");
+
+    static_assert(
+        sizeof(entity_id) == (entity_id_index_bits + entity_id_version_bits) / 8u,
+        "ecs_hpp::entity_id mismatch index and version bits");
+
+    constexpr inline entity_id entity_id_index(entity_id id) noexcept {
+        return id & entity_id_index_mask;
+    }
+
+    constexpr inline entity_id entity_id_version(entity_id id) noexcept {
+        return (id >> entity_id_index_bits) & entity_id_version_mask;
+    }
+
+    constexpr inline entity_id entity_id_join(entity_id index, entity_id version) noexcept {
+        return index | (version << entity_id_index_bits);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -293,7 +315,7 @@ namespace ecs_hpp
                 if ( p.second ) {
                     return p.first;
                 }
-                throw std::out_of_range("sparse_set");
+                throw std::logic_error("ecs_hpp::sparse_set(value not found)");
             }
 
             std::pair<std::size_t,bool> find_index(const T& v) const noexcept {
@@ -333,7 +355,7 @@ namespace ecs_hpp
             std::size_t new_capacity_for_(std::size_t nsize) const {
                 const std::size_t ms = max_size();
                 if ( nsize > ms ) {
-                    throw std::length_error("sparse_set<T>");
+                    throw std::length_error("ecs_hpp::sparse_set");
                 }
                 if ( capacity_ >= ms / 2u ) {
                     return ms;
@@ -509,6 +531,24 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// detail::entity_id_indexer
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        struct entity_id_indexer {
+            std::size_t operator()(entity_id id) const noexcept {
+                return entity_id_index(id);
+            }
+        };
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // detail::component_storage
 //
 // -----------------------------------------------------------------------------
@@ -542,7 +582,7 @@ namespace ecs_hpp
             void for_each_component(F&& f) const noexcept;
         private:
             registry& owner_;
-            detail::sparse_map<entity_id, T> components_;
+            detail::sparse_map<entity_id, T, entity_id_indexer> components_;
         };
 
         template < typename T >
@@ -593,21 +633,6 @@ namespace ecs_hpp
             }
         }
     }
-}
-
-// -----------------------------------------------------------------------------
-//
-// exceptions
-//
-// -----------------------------------------------------------------------------
-
-namespace ecs_hpp
-{
-    class basic_exception : public std::logic_error {
-    public:
-        basic_exception(const char* msg)
-        : std::logic_error(msg) {}
-    };
 }
 
 // -----------------------------------------------------------------------------
@@ -819,7 +844,7 @@ namespace ecs_hpp
     private:
         entity_id last_entity_id_{0u};
         std::vector<entity_id> free_entity_ids_;
-        detail::sparse_set<entity_id> entity_ids_;
+        detail::sparse_set<entity_id, detail::entity_id_indexer> entity_ids_;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
         detail::sparse_map<family_id, storage_uptr> storages_;
@@ -941,16 +966,22 @@ namespace ecs_hpp
 {
     inline entity registry::create_entity() {
         if ( !free_entity_ids_.empty() ) {
-            auto ent = entity(*this, free_entity_ids_.back());
-            entity_ids_.insert(ent.id());
+            const auto free_ent_id = free_entity_ids_.back();
+            const auto new_ent_id = entity_id_join(
+                entity_id_index(free_ent_id),
+                entity_id_version(free_ent_id) + 1u);
+            auto ent = entity(*this, new_ent_id);
+            entity_ids_.insert(new_ent_id);
             free_entity_ids_.pop_back();
             return ent;
 
         }
-        assert(last_entity_id_ < std::numeric_limits<entity_id>::max());
-        auto ent = entity(*this, ++last_entity_id_);
-        entity_ids_.insert(ent.id());
-        return ent;
+        if ( last_entity_id_ < entity_id_index_mask ) {
+            auto ent = entity(*this, ++last_entity_id_);
+            entity_ids_.insert(ent.id());
+            return ent;
+        }
+        throw std::logic_error("ecs_hpp::registry(entity index overlow)");
     }
 
     inline bool registry::destroy_entity(const entity& ent) {
@@ -1009,7 +1040,7 @@ namespace ecs_hpp
         if ( component ) {
             return *component;
         }
-        throw basic_exception("component not found");
+        throw std::logic_error("ecs_hpp::registry(component not found)");
     }
 
     template < typename T >
@@ -1018,7 +1049,7 @@ namespace ecs_hpp
         if ( component ) {
             return *component;
         }
-        throw basic_exception("component not found");
+        throw std::logic_error("ecs_hpp::registry(component not found)");
     }
 
     template < typename T >
