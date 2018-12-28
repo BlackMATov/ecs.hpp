@@ -761,6 +761,11 @@ namespace ecs_hpp
         template < typename... Ts >
         std::tuple<const Ts*...> find_components(const entity& ent) const noexcept;
 
+        template < typename F >
+        void for_each_entity(F&& f);
+        template < typename F >
+        void for_each_entity(F&& f) const;
+
         template < typename T, typename F >
         void for_each_component(F&& f);
         template < typename T, typename F >
@@ -1071,6 +1076,20 @@ namespace ecs_hpp
         return std::make_tuple(find_component<Ts>(ent)...);
     }
 
+    template < typename F >
+    void registry::for_each_entity(F&& f) {
+        for ( const auto id : entity_ids_ ) {
+            f(entity(*this, id));
+        }
+    }
+
+    template < typename F >
+    void registry::for_each_entity(F&& f) const {
+        for ( const auto id : entity_ids_ ) {
+            f(entity(const_cast<registry&>(*this), id));
+        }
+    }
+
     template < typename T, typename F >
     void registry::for_each_component(F&& f) {
         detail::component_storage<T>* storage = find_storage_<T>();
@@ -1117,8 +1136,9 @@ namespace ecs_hpp
     detail::component_storage<T>* registry::find_storage_() noexcept {
         const auto family = detail::type_family<T>::id();
         using raw_storage_ptr = detail::component_storage<T>*;
-        return storages_.has(family)
-            ? static_cast<raw_storage_ptr>(storages_.get(family).get())
+        const storage_uptr* storage_uptr_ptr = storages_.find(family);
+        return storage_uptr_ptr && *storage_uptr_ptr
+            ? static_cast<raw_storage_ptr>(storage_uptr_ptr->get())
             : nullptr;
     }
 
@@ -1126,8 +1146,9 @@ namespace ecs_hpp
     const detail::component_storage<T>* registry::find_storage_() const noexcept {
         const auto family = detail::type_family<T>::id();
         using raw_storage_ptr = const detail::component_storage<T>*;
-        return storages_.has(family)
-            ? static_cast<raw_storage_ptr>(storages_.get(family).get())
+        const storage_uptr* storage_uptr_ptr = storages_.find(family);
+        return storage_uptr_ptr && *storage_uptr_ptr
+            ? static_cast<raw_storage_ptr>(storage_uptr_ptr->get())
             : nullptr;
     }
 

@@ -565,6 +565,30 @@ TEST_CASE("registry") {
             REQUIRE(e1.get_component<velocity_c>().y == 40);
         }
     }
+    SECTION("for_each_entity") {
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            {
+                ecs::entity_id acc1 = 0;
+                w.for_each_entity([&acc1](const ecs::entity& e){
+                    acc1 += e.id();
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+            }
+            {
+                const ecs::registry& ww = w;
+                ecs::entity_id acc1 = 0;
+                ww.for_each_entity([&acc1](const ecs::entity& e){
+                    acc1 += e.id();
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+            }
+        }
+    }
     SECTION("for_each_component") {
         {
             ecs::registry w;
