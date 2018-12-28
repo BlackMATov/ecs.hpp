@@ -31,9 +31,66 @@
 #include "ecs.hpp"
 ```
 
-## Examples
+## Basic usage
 
-> coming soon!
+```cpp
+struct position_component {
+    float x{0};
+    float y{0};
+    position_component(float nx, float ny)
+    : x(nx), y(ny) {}
+};
+
+struct velocity_component {
+    float dx{0};
+    float dy{0};
+    velocity_component(float ndx, float ndy)
+    : dx(ndx), dy(ndy) {}
+};
+
+class movement_system : public ecs_hpp::system {
+public:
+    void process(ecs_hpp::registry& owner) override {
+        owner.for_joined_components<
+            position_component,
+            velocity_component
+        >([](const ecs_hpp::entity& e, position_component& p, const velocity_component& v) {
+            p.x += v.dx;
+            p.y += v.dy;
+        });
+    }
+};
+
+class gravity_system : public ecs_hpp::system {
+public:
+    gravity_system(float gravity)
+    : gravity_(gravity) {}
+
+    void process(ecs_hpp::registry& owner) override {
+        owner.for_each_component<
+            velocity_component
+        >([this](const ecs_hpp::entity& e, velocity_component& v) {
+            v.dx += gravity_;
+            v.dy += gravity_;
+        });
+    }
+private:
+    float gravity_;
+};
+
+ecs_hpp::registry world;
+world.add_system<movement_system>();
+
+auto entity_one = world.create_entity();
+world.assign_component<position_component>(entity_one, 4.f, 2.f);
+world.assign_component<velocity_component>(entity_one, 10.f, 20.f);
+
+auto entity_two = world.create_entity();
+entity_two.assign_component<position_component>(4.f, 2.f);
+entity_two.assign_component<velocity_component>(10.f, 20.f);
+
+world.process_systems();
+```
 
 ## API
 
