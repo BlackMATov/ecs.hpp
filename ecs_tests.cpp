@@ -479,12 +479,6 @@ TEST_CASE("registry") {
 
                 REQUIRE_THROWS_AS(ww.get_component<velocity_c>(e1), std::logic_error);
                 REQUIRE_THROWS_AS(ww.get_component<position_c>(e2), std::logic_error);
-
-                ww.remove_all_components(e1);
-                ww.remove_all_components(e2);
-
-                REQUIRE_FALSE(ww.find_component<position_c>(e1));
-                REQUIRE_FALSE(ww.find_component<velocity_c>(e2));
             }
         }
         {
@@ -582,7 +576,7 @@ TEST_CASE("registry") {
             {
                 const ecs::registry& ww = w;
                 ecs::entity_id acc1 = 0;
-                ww.for_each_entity([&acc1](const ecs::entity& e){
+                ww.for_each_entity([&acc1](const ecs::const_entity& e){
                     acc1 += e.id();
                 });
                 REQUIRE(acc1 == e1.id() + e2.id());
@@ -616,7 +610,7 @@ TEST_CASE("registry") {
                 const ecs::registry& ww = w;
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
-                ww.for_each_component<position_c>([&acc1, &acc2](ecs::entity e, const position_c& p){
+                ww.for_each_component<position_c>([&acc1, &acc2](ecs::const_entity e, const position_c& p){
                     acc1 += e.id();
                     acc2 += p.x;
                 });
@@ -689,7 +683,7 @@ TEST_CASE("registry") {
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
                 ww.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
-                    ecs::entity e, const position_c& p, const velocity_c& v)
+                    ecs::const_entity e, const position_c& p, const velocity_c& v)
                 {
                     acc1 += e.id();
                     acc2 += p.x + v.x;
