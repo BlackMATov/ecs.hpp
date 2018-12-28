@@ -94,6 +94,17 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(tuple_contains(std::make_tuple(1,2,3), 4));
         }
     }
+    SECTION("entity_id") {
+        using namespace ecs::detail;
+        {
+            REQUIRE(entity_id_index(entity_id_join(10u, 20u)) == 10u);
+            REQUIRE(entity_id_version(entity_id_join(10u, 20u)) == 20u);
+            REQUIRE(upgrade_entity_id(entity_id_join(10u, 20u)) == entity_id_join(10u, 21u));
+            REQUIRE(upgrade_entity_id(entity_id_join(0u, 1023u)) == entity_id_join(0u, 0u));
+            REQUIRE(upgrade_entity_id(entity_id_join(1u, 1023u)) == entity_id_join(1u, 0u));
+            REQUIRE(upgrade_entity_id(entity_id_join(2048u, 1023u)) == entity_id_join(2048u, 0u));
+        }
+    }
     SECTION("sparse_set") {
         using namespace ecs::detail;
         {
