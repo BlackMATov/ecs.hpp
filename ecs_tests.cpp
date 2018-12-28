@@ -90,8 +90,8 @@ TEST_CASE("detail") {
             REQUIRE(s.capacity() == 0u);
             REQUIRE_FALSE(s.has(42u));
             REQUIRE(s.find(42u) == s.end());
-            REQUIRE_FALSE(s.find_index(42u).second);
-            REQUIRE_THROWS(s.get_index(42u));
+            REQUIRE_FALSE(s.find_dense_index(42u).second);
+            REQUIRE_THROWS(s.get_dense_index(42u));
 
             REQUIRE(s.insert(42u));
 
@@ -102,9 +102,9 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(s.has(84u));
 
             REQUIRE(s.find(42u) == s.begin());
-            REQUIRE(s.find_index(42u).second);
-            REQUIRE(s.find_index(42u).first == 0u);
-            REQUIRE(s.get_index(42u) == 0u);
+            REQUIRE(s.find_dense_index(42u).second);
+            REQUIRE(s.find_dense_index(42u).first == 0u);
+            REQUIRE(s.get_dense_index(42u) == 0u);
 
             s.clear();
 
@@ -129,22 +129,22 @@ TEST_CASE("detail") {
             REQUIRE(s.has(42u));
             REQUIRE(s.has(84u));
             REQUIRE(s.size() == 2u);
-            REQUIRE(s.find_index(42u).second);
-            REQUIRE(s.find_index(42u).first == 0u);
-            REQUIRE(s.find_index(84u).second);
-            REQUIRE(s.find_index(84u).first == 1u);
-            REQUIRE(s.get_index(42u) == 0u);
-            REQUIRE(s.get_index(84u) == 1u);
+            REQUIRE(s.find_dense_index(42u).second);
+            REQUIRE(s.find_dense_index(42u).first == 0u);
+            REQUIRE(s.find_dense_index(84u).second);
+            REQUIRE(s.find_dense_index(84u).first == 1u);
+            REQUIRE(s.get_dense_index(42u) == 0u);
+            REQUIRE(s.get_dense_index(84u) == 1u);
 
             REQUIRE(s.unordered_erase(42u));
 
             REQUIRE_FALSE(s.has(42u));
             REQUIRE(s.has(84u));
             REQUIRE(s.size() == 1u);
-            REQUIRE(s.find_index(84u).second);
-            REQUIRE(s.find_index(84u).first == 0u);
-            REQUIRE_THROWS(s.get_index(42u));
-            REQUIRE(s.get_index(84u) == 0u);
+            REQUIRE(s.find_dense_index(84u).second);
+            REQUIRE(s.find_dense_index(84u).first == 0u);
+            REQUIRE_THROWS(s.get_dense_index(42u));
+            REQUIRE(s.get_dense_index(84u) == 0u);
         }
         {
             sparse_set<position_c, position_c_indexer> s{position_c_indexer()};
@@ -153,14 +153,14 @@ TEST_CASE("detail") {
             REQUIRE(s.has(position_c(1,2)));
             REQUIRE(s.emplace(3,4));
             REQUIRE(s.has(position_c(3,4)));
-            REQUIRE(s.get_index(position_c(1,2)) == 0);
-            REQUIRE(s.get_index(position_c(3,4)) == 1);
-            REQUIRE(s.find_index(position_c(1,2)).first == 0);
-            REQUIRE(s.find_index(position_c(3,4)).first == 1);
-            REQUIRE(s.find_index(position_c(1,2)).second);
-            REQUIRE(s.find_index(position_c(3,4)).second);
+            REQUIRE(s.get_dense_index(position_c(1,2)) == 0);
+            REQUIRE(s.get_dense_index(position_c(3,4)) == 1);
+            REQUIRE(s.find_dense_index(position_c(1,2)).first == 0);
+            REQUIRE(s.find_dense_index(position_c(3,4)).first == 1);
+            REQUIRE(s.find_dense_index(position_c(1,2)).second);
+            REQUIRE(s.find_dense_index(position_c(3,4)).second);
             REQUIRE(s.unordered_erase(position_c(1,2)));
-            REQUIRE(s.get_index(position_c(3,4)) == 0);
+            REQUIRE(s.get_dense_index(position_c(3,4)) == 0);
         }
     }
     SECTION("sparse_map") {
@@ -177,10 +177,10 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(m.size());
             REQUIRE(m.capacity() == 0u);
             REQUIRE_FALSE(m.has(42u));
-            REQUIRE_THROWS(m.get_value(42u));
-            REQUIRE_THROWS(as_const(m).get_value(42u));
-            REQUIRE_FALSE(m.find_value(42u));
-            REQUIRE_FALSE(as_const(m).find_value(42u));
+            REQUIRE_THROWS(m.get(42u));
+            REQUIRE_THROWS(as_const(m).get(42u));
+            REQUIRE_FALSE(m.find(42u));
+            REQUIRE_FALSE(as_const(m).find(42u));
 
             {
                 obj_t o{21u};
@@ -206,23 +206,23 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(m.has(25u));
             REQUIRE_FALSE(m.has(99u));
 
-            REQUIRE(m.get_value(21u).x == 21u);
-            REQUIRE(m.get_value(42u).x == 42u);
-            REQUIRE(m.get_value(84u).x == 84u);
-            REQUIRE(as_const(m).get_value(84u).x == 84u);
-            REQUIRE_THROWS(m.get_value(11u));
-            REQUIRE_THROWS(m.get_value(25u));
-            REQUIRE_THROWS(m.get_value(99u));
-            REQUIRE_THROWS(as_const(m).get_value(99u));
+            REQUIRE(m.get(21u).x == 21u);
+            REQUIRE(m.get(42u).x == 42u);
+            REQUIRE(m.get(84u).x == 84u);
+            REQUIRE(as_const(m).get(84u).x == 84u);
+            REQUIRE_THROWS(m.get(11u));
+            REQUIRE_THROWS(m.get(25u));
+            REQUIRE_THROWS(m.get(99u));
+            REQUIRE_THROWS(as_const(m).get(99u));
 
-            REQUIRE(m.find_value(21u)->x == 21u);
-            REQUIRE(m.find_value(42u)->x == 42u);
-            REQUIRE(m.find_value(84u)->x == 84u);
-            REQUIRE(as_const(m).find_value(84u)->x == 84u);
-            REQUIRE_FALSE(m.find_value(11u));
-            REQUIRE_FALSE(m.find_value(25u));
-            REQUIRE_FALSE(m.find_value(99u));
-            REQUIRE_FALSE(as_const(m).find_value(99u));
+            REQUIRE(m.find(21u)->x == 21u);
+            REQUIRE(m.find(42u)->x == 42u);
+            REQUIRE(m.find(84u)->x == 84u);
+            REQUIRE(as_const(m).find(84u)->x == 84u);
+            REQUIRE_FALSE(m.find(11u));
+            REQUIRE_FALSE(m.find(25u));
+            REQUIRE_FALSE(m.find(99u));
+            REQUIRE_FALSE(as_const(m).find(99u));
 
             REQUIRE(m.unordered_erase(42u));
             REQUIRE_FALSE(m.unordered_erase(42u));
@@ -251,14 +251,14 @@ TEST_CASE("detail") {
             REQUIRE(s.has(position_c(1,2)));
             REQUIRE(s.emplace(position_c(3,4), obj_t{3}));
             REQUIRE(s.has(position_c(3,4)));
-            REQUIRE(s.get_value(position_c(1,2)).x == 1);
-            REQUIRE(s.get_value(position_c(3,4)).x == 3);
-            REQUIRE(s.find_value(position_c(1,2))->x == 1);
-            REQUIRE(s.find_value(position_c(3,4))->x == 3);
-            REQUIRE(s.find_value(position_c(1,2)));
-            REQUIRE(s.find_value(position_c(3,4)));
+            REQUIRE(s.get(position_c(1,2)).x == 1);
+            REQUIRE(s.get(position_c(3,4)).x == 3);
+            REQUIRE(s.find(position_c(1,2))->x == 1);
+            REQUIRE(s.find(position_c(3,4))->x == 3);
+            REQUIRE(s.find(position_c(1,2)));
+            REQUIRE(s.find(position_c(3,4)));
             REQUIRE(s.unordered_erase(position_c(1,2)));
-            REQUIRE(s.get_value(position_c(3,4)).x == 3);
+            REQUIRE(s.get(position_c(3,4)).x == 3);
         }
     }
 }
@@ -301,38 +301,43 @@ TEST_CASE("registry") {
         }
         {
             ecs::registry w;
+            using namespace ecs::detail;
 
             const auto e1 = w.create_entity();
 
             w.destroy_entity(e1);
             const auto e2 = w.create_entity();
             REQUIRE(e1 != e2);
-            REQUIRE(ecs::entity_id_index(e1.id()) == ecs::entity_id_index(e2.id()));
-            REQUIRE(ecs::entity_id_version(e1.id()) + 1 == ecs::entity_id_version(e2.id()));
+            REQUIRE(entity_id_index(e1.id()) == entity_id_index(e2.id()));
+            REQUIRE(entity_id_version(e1.id()) + 1 == entity_id_version(e2.id()));
 
             w.destroy_entity(e2);
             const auto e3 = w.create_entity();
             REQUIRE(e3 != e2);
-            REQUIRE(ecs::entity_id_index(e2.id()) == ecs::entity_id_index(e3.id()));
-            REQUIRE(ecs::entity_id_version(e2.id()) + 1 == ecs::entity_id_version(e3.id()));
+            REQUIRE(entity_id_index(e2.id()) == entity_id_index(e3.id()));
+            REQUIRE(entity_id_version(e2.id()) + 1 == entity_id_version(e3.id()));
         }
         {
             ecs::registry w;
+            using namespace ecs::detail;
+
             auto e = w.create_entity();
             const auto e_id = e.id();
-            for ( std::size_t i = 0; i < ecs::entity_id_version_mask; ++i ) {
+            for ( std::size_t i = 0; i < entity_id_version_mask; ++i ) {
                 e.destroy();
                 e = w.create_entity();
-                REQUIRE(ecs::entity_id_version(e_id) != ecs::entity_id_version(e.id()));
+                REQUIRE(entity_id_version(e_id) != entity_id_version(e.id()));
             }
             // entity version wraps around
             e.destroy();
             e = w.create_entity();
-            REQUIRE(ecs::entity_id_version(e_id) == ecs::entity_id_version(e.id()));
+            REQUIRE(entity_id_version(e_id) == entity_id_version(e.id()));
         }
         {
             ecs::registry w;
-            for ( std::size_t i = 0; i < ecs::entity_id_index_mask; ++i ) {
+            using namespace ecs::detail;
+
+            for ( std::size_t i = 0; i < entity_id_index_mask; ++i ) {
                 w.create_entity();
             }
             // entity index overflow

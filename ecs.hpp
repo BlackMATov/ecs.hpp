@@ -13,10 +13,8 @@
 #include <tuple>
 #include <memory>
 #include <vector>
-#include <limits>
 #include <utility>
 #include <iterator>
-#include <exception>
 #include <stdexcept>
 #include <algorithm>
 #include <functional>
@@ -37,35 +35,22 @@ namespace ecs_hpp
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
 
-    const std::size_t entity_id_index_bits = 22;
-    const std::size_t entity_id_index_mask = (1 << entity_id_index_bits) - 1;
-
-    const std::size_t entity_id_version_bits = 10;
-    const std::size_t entity_id_version_mask = (1 << entity_id_version_bits) - 1;
+    constexpr std::size_t entity_id_index_bits = 22u;
+    constexpr std::size_t entity_id_version_bits = 10u;
 
     static_assert(
         std::is_unsigned<family_id>::value,
-        "ecs_hpp::family_id must be an unsigned integer");
+        "ecs_hpp (family_id must be an unsigned integer)");
 
     static_assert(
         std::is_unsigned<entity_id>::value,
-        "ecs_hpp::entity_id must be an unsigned integer");
+        "ecs_hpp (entity_id must be an unsigned integer)");
 
     static_assert(
+        entity_id_index_bits > 0u &&
+        entity_id_version_bits > 0u &&
         sizeof(entity_id) == (entity_id_index_bits + entity_id_version_bits) / 8u,
-        "ecs_hpp::entity_id mismatch index and version bits");
-
-    constexpr inline entity_id entity_id_index(entity_id id) noexcept {
-        return id & entity_id_index_mask;
-    }
-
-    constexpr inline entity_id entity_id_version(entity_id id) noexcept {
-        return (id >> entity_id_index_bits) & entity_id_version_mask;
-    }
-
-    constexpr inline entity_id entity_id_join(entity_id index, entity_id version) noexcept {
-        return index | (version << entity_id_index_bits);
-    }
+        "ecs_hpp (invalid entity id index and version bits)");
 }
 
 // -----------------------------------------------------------------------------
@@ -143,6 +128,31 @@ namespace ecs_hpp
                 return true;
             }
             return tuple_contains(tuple_tail(t), v);
+        }
+
+        //
+        // entity_id index/version
+        //
+
+        constexpr std::size_t entity_id_index_mask = (1u << entity_id_index_bits) - 1u;
+        constexpr std::size_t entity_id_version_mask = (1u << entity_id_version_bits) - 1u;
+
+        constexpr inline entity_id entity_id_index(entity_id id) noexcept {
+            return id & entity_id_index_mask;
+        }
+
+        constexpr inline entity_id entity_id_version(entity_id id) noexcept {
+            return (id >> entity_id_index_bits) & entity_id_version_mask;
+        }
+
+        constexpr inline entity_id entity_id_join(entity_id index, entity_id version) noexcept {
+            return index | (version << entity_id_index_bits);
+        }
+
+        constexpr inline entity_id upgrade_entity_id(entity_id id) noexcept {
+            return entity_id_join(
+                entity_id_index(id),
+                entity_id_version(id) + 1u);
         }
     }
 }
@@ -320,15 +330,15 @@ namespace ecs_hpp
                     : end();
             }
 
-            std::size_t get_index(const T& v) const {
-                const auto p = find_index(v);
+            std::size_t get_dense_index(const T& v) const {
+                const auto p = find_dense_index(v);
                 if ( p.second ) {
                     return p.first;
                 }
-                throw std::logic_error("ecs_hpp::sparse_set(value not found)");
+                throw std::logic_error("ecs_hpp::sparse_set (value not found)");
             }
 
-            std::pair<std::size_t,bool> find_index(const T& v) const noexcept {
+            std::pair<std::size_t,bool> find_dense_index(const T& v) const noexcept {
                 return has(v)
                     ? std::make_pair(sparse_[indexer_(v)], true)
                     : std::make_pair(std::size_t(-1), false);
@@ -474,7 +484,7 @@ namespace ecs_hpp
                 if ( !keys_.has(k) ) {
                     return false;
                 }
-                const std::size_t index = keys_.get_index(k);
+                const std::size_t index = keys_.get_dense_index(k);
                 values_[index] = std::move(values_.back());
                 values_.pop_back();
                 keys_.unordered_erase(k);
@@ -490,23 +500,23 @@ namespace ecs_hpp
                 return keys_.has(k);
             }
 
-            T& get_value(const K& k) {
-                return values_[keys_.get_index(k)];
+            T& get(const K& k) {
+                return values_[keys_.get_dense_index(k)];
             }
 
-            const T& get_value(const K& k) const {
-                return values_[keys_.get_index(k)];
+            const T& get(const K& k) const {
+                return values_[keys_.get_dense_index(k)];
             }
 
-            T* find_value(const K& k) noexcept {
-                const auto ip = keys_.find_index(k);
+            T* find(const K& k) noexcept {
+                const auto ip = keys_.find_dense_index(k);
                 return ip.second
                     ? &values_[ip.first]
                     : nullptr;
             }
 
-            const T* find_value(const K& k) const noexcept {
-                const auto ip = keys_.find_index(k);
+            const T* find(const K& k) const noexcept {
+                const auto ip = keys_.find_dense_index(k);
                 return ip.second
                     ? &values_[ip.first]
                     : nullptr;
@@ -603,7 +613,7 @@ namespace ecs_hpp
         template < typename... Args >
         void component_storage<T>::assign(entity_id id, Args&&... args) {
             if ( !components_.emplace(id, std::forward<Args>(args)...) ) {
-                components_.get_value(id) = T(std::forward<Args>(args)...);
+                components_.get(id) = T(std::forward<Args>(args)...);
             }
         }
 
@@ -619,19 +629,19 @@ namespace ecs_hpp
 
         template < typename T >
         T* component_storage<T>::find(entity_id id) noexcept {
-            return components_.find_value(id);
+            return components_.find(id);
         }
 
         template < typename T >
         const T* component_storage<T>::find(entity_id id) const noexcept {
-            return components_.find_value(id);
+            return components_.find(id);
         }
 
         template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) noexcept {
             for ( const auto id : components_ ) {
-                f(entity(owner_, id), components_.get_value(id));
+                f(entity(owner_, id), components_.get(id));
             }
         }
 
@@ -639,7 +649,7 @@ namespace ecs_hpp
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) const noexcept {
             for ( const auto id : components_ ) {
-                f(entity(owner_, id), components_.get_value(id));
+                f(entity(owner_, id), components_.get(id));
             }
         }
     }
@@ -977,21 +987,19 @@ namespace ecs_hpp
     inline entity registry::create_entity() {
         if ( !free_entity_ids_.empty() ) {
             const auto free_ent_id = free_entity_ids_.back();
-            const auto new_ent_id = entity_id_join(
-                entity_id_index(free_ent_id),
-                entity_id_version(free_ent_id) + 1u);
+            const auto new_ent_id = detail::upgrade_entity_id(free_ent_id);
             auto ent = entity(*this, new_ent_id);
             entity_ids_.insert(new_ent_id);
             free_entity_ids_.pop_back();
             return ent;
 
         }
-        if ( last_entity_id_ < entity_id_index_mask ) {
+        if ( last_entity_id_ < detail::entity_id_index_mask ) {
             auto ent = entity(*this, ++last_entity_id_);
             entity_ids_.insert(ent.id());
             return ent;
         }
-        throw std::logic_error("ecs_hpp::registry(entity index overlow)");
+        throw std::logic_error("ecs_hpp::registry (entity index overlow)");
     }
 
     inline bool registry::destroy_entity(const entity& ent) {
@@ -1050,7 +1058,7 @@ namespace ecs_hpp
         if ( component ) {
             return *component;
         }
-        throw std::logic_error("ecs_hpp::registry(component not found)");
+        throw std::logic_error("ecs_hpp::registry (component not found)");
     }
 
     template < typename T >
@@ -1059,7 +1067,7 @@ namespace ecs_hpp
         if ( component ) {
             return *component;
         }
-        throw std::logic_error("ecs_hpp::registry(component not found)");
+        throw std::logic_error("ecs_hpp::registry (component not found)");
     }
 
     template < typename T >
@@ -1139,7 +1147,7 @@ namespace ecs_hpp
         const auto family = detail::type_family<T>::id();
         using raw_storage_ptr = detail::component_storage<T>*;
         return storages_.has(family)
-            ? static_cast<raw_storage_ptr>(storages_.get_value(family).get())
+            ? static_cast<raw_storage_ptr>(storages_.get(family).get())
             : nullptr;
     }
 
@@ -1148,7 +1156,7 @@ namespace ecs_hpp
         const auto family = detail::type_family<T>::id();
         using raw_storage_ptr = const detail::component_storage<T>*;
         return storages_.has(family)
-            ? static_cast<raw_storage_ptr>(storages_.get_value(family).get())
+            ? static_cast<raw_storage_ptr>(storages_.get(family).get())
             : nullptr;
     }
 
@@ -1163,7 +1171,7 @@ namespace ecs_hpp
             family,
             std::make_unique<detail::component_storage<T>>(*this));
         return *static_cast<detail::component_storage<T>*>(
-            storages_.get_value(family).get());
+            storages_.get(family).get());
     }
 
     inline bool registry::is_entity_alive_impl_(const entity& ent) const noexcept {
@@ -1176,7 +1184,7 @@ namespace ecs_hpp
         }
         std::size_t removed_components = 0u;
         for ( const auto id : storages_ ) {
-            if ( storages_.get_value(id)->remove(ent.id()) ) {
+            if ( storages_.get(id)->remove(ent.id()) ) {
                 ++removed_components;
             }
         }
