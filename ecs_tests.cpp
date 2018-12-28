@@ -37,6 +37,19 @@ namespace
         return l.x == r.x
             && l.y == r.y;
     }
+
+    struct mult_indexer {
+        template < typename T >
+        std::size_t operator()(const T& v) const noexcept {
+            return static_cast<std::size_t>(v * 2);
+        }
+    };
+
+    struct position_c_indexer {
+        std::size_t operator()(const position_c& v) const noexcept {
+            return static_cast<std::size_t>(v.x);
+        }
+    };
 }
 
 TEST_CASE("detail") {
@@ -70,7 +83,7 @@ TEST_CASE("detail") {
     SECTION("sparse_set") {
         using namespace ecs::detail;
         {
-            sparse_set<unsigned> s;
+            sparse_set<unsigned, mult_indexer> s{mult_indexer{}};
 
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
@@ -84,7 +97,7 @@ TEST_CASE("detail") {
 
             REQUIRE_FALSE(s.empty());
             REQUIRE(s.size() == 1u);
-            REQUIRE(s.capacity() == 43u);
+            REQUIRE(s.capacity() == 85u);
             REQUIRE(s.has(42u));
             REQUIRE_FALSE(s.has(84u));
 
@@ -108,7 +121,7 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(s.has(84u));
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
-            REQUIRE(s.capacity() == 43u * 2);
+            REQUIRE(s.capacity() == 85u * 2);
 
             s.insert(42u);
             s.insert(84u);
@@ -132,6 +145,22 @@ TEST_CASE("detail") {
             REQUIRE(s.find_index(84u).first == 0u);
             REQUIRE_THROWS(s.get_index(42u));
             REQUIRE(s.get_index(84u) == 0u);
+        }
+        {
+            sparse_set<position_c, position_c_indexer> s{position_c_indexer()};
+            REQUIRE(s.insert(position_c(1,2)));
+            REQUIRE_FALSE(s.insert(position_c(1,2)));
+            REQUIRE(s.has(position_c(1,2)));
+            REQUIRE(s.emplace(3,4));
+            REQUIRE(s.has(position_c(3,4)));
+            REQUIRE(s.get_index(position_c(1,2)) == 0);
+            REQUIRE(s.get_index(position_c(3,4)) == 1);
+            REQUIRE(s.find_index(position_c(1,2)).first == 0);
+            REQUIRE(s.find_index(position_c(3,4)).first == 1);
+            REQUIRE(s.find_index(position_c(1,2)).second);
+            REQUIRE(s.find_index(position_c(3,4)).second);
+            REQUIRE(s.unordered_erase(position_c(1,2)));
+            REQUIRE(s.get_index(position_c(3,4)) == 0);
         }
     }
     SECTION("sparse_map") {
@@ -209,6 +238,27 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(m.has(21u));
             REQUIRE_FALSE(m.has(42u));
             REQUIRE_FALSE(m.has(84u));
+        }
+        {
+            struct obj_t {
+                int x;
+                obj_t(int nx) : x(nx) {}
+            };
+
+            sparse_map<position_c, obj_t, position_c_indexer> s{position_c_indexer()};
+            REQUIRE(s.insert(position_c(1,2), obj_t{1}));
+            REQUIRE_FALSE(s.insert(position_c(1,2), obj_t{1}));
+            REQUIRE(s.has(position_c(1,2)));
+            REQUIRE(s.emplace(position_c(3,4), obj_t{3}));
+            REQUIRE(s.has(position_c(3,4)));
+            REQUIRE(s.get_value(position_c(1,2)).x == 1);
+            REQUIRE(s.get_value(position_c(3,4)).x == 3);
+            REQUIRE(s.find_value(position_c(1,2))->x == 1);
+            REQUIRE(s.find_value(position_c(3,4))->x == 3);
+            REQUIRE(s.find_value(position_c(1,2)));
+            REQUIRE(s.find_value(position_c(3,4)));
+            REQUIRE(s.unordered_erase(position_c(1,2)));
+            REQUIRE(s.get_value(position_c(3,4)).x == 3);
         }
     }
 }

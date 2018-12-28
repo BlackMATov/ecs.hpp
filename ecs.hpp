@@ -161,6 +161,33 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// detail::sparse_indexer
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename T
+                 , bool = std::is_unsigned<T>::value && sizeof(T) <= sizeof(std::size_t) >
+        struct sparse_unsigned_indexer {
+            std::size_t operator()(const T v) const noexcept {
+                return static_cast<std::size_t>(v);
+            }
+        };
+
+        template < typename T >
+        struct sparse_unsigned_indexer<T, false> {};
+
+        template < typename T >
+        struct sparse_indexer
+        : public sparse_unsigned_indexer<T> {};
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // detail::sparse_set
 //
 // -----------------------------------------------------------------------------
@@ -169,12 +196,10 @@ namespace ecs_hpp
 {
     namespace detail
     {
-        template < typename T >
+        template < typename T
+                 , typename Indexer = sparse_indexer<T> >
         class sparse_set final {
         public:
-            static_assert(
-                std::is_unsigned<T>::value,
-                "sparse_set<T> can contain an unsigned integers only");
             using iterator = typename std::vector<T>::iterator;
             using const_iterator = typename std::vector<T>::const_iterator;
         public:
@@ -205,27 +230,42 @@ namespace ecs_hpp
                 return cbegin() + static_cast<dt>(size_);
             }
         public:
-            bool insert(const T v) {
+            sparse_set(const Indexer& indexer = Indexer())
+            : indexer_(indexer) {}
+
+            bool insert(T&& v) {
                 if ( has(v) ) {
                     return false;
                 }
-                if ( v >= capacity_ ) {
-                    reserve(new_capacity_for_(v + 1u));
+                const std::size_t vi = indexer_(v);
+                if ( vi >= capacity_ ) {
+                    reserve(new_capacity_for_(vi + 1u));
                 }
-                dense_[size_] = v;
-                sparse_[v] = size_;
+                dense_[size_] = std::move(v);
+                sparse_[vi] = size_;
                 ++size_;
                 return true;
             }
 
-            bool unordered_erase(const T v) noexcept {
+            bool insert(const T& v) {
+                return insert(T(v));
+            }
+
+            template < typename... Args >
+            bool emplace(Args&&... args) {
+                return insert(T(std::forward<Args>(args)...));
+            }
+
+            bool unordered_erase(const T& v)
+                noexcept(std::is_nothrow_move_assignable<T>::value)
+            {
                 if ( !has(v) ) {
                     return false;
                 }
-                const std::size_t index = sparse_[v];
-                const T last = dense_[size_ - 1u];
-                dense_[index] = last;
-                sparse_[last] = index;
+                const std::size_t vi = indexer_(v);
+                const std::size_t index = sparse_[vi];
+                dense_[index] = std::move(dense_[size_ - 1u]);
+                sparse_[indexer_(dense_[index])] = index;
                 --size_;
                 return true;
             }
@@ -234,29 +274,31 @@ namespace ecs_hpp
                 size_ = 0u;
             }
 
-            bool has(const T v) const noexcept {
-                return v < capacity_
-                    && sparse_[v] < size_
-                    && dense_[sparse_[v]] == v;
+            bool has(const T& v) const noexcept {
+                const std::size_t vi = indexer_(v);
+                return vi < capacity_
+                    && sparse_[vi] < size_
+                    && dense_[sparse_[vi]] == v;
             }
 
-            const_iterator find(const T v) const noexcept {
+            const_iterator find(const T& v) const noexcept {
+                const std::size_t vi = indexer_(v);
                 return has(v)
-                    ? begin() + sparse_[v]
+                    ? begin() + sparse_[vi]
                     : end();
             }
 
-            std::size_t get_index(const T v) const {
+            std::size_t get_index(const T& v) const {
                 const auto p = find_index(v);
                 if ( p.second ) {
                     return p.first;
                 }
-                throw std::out_of_range("sparse_set<T>");
+                throw std::out_of_range("sparse_set");
             }
 
-            std::pair<std::size_t,bool> find_index(const T v) const noexcept {
+            std::pair<std::size_t,bool> find_index(const T& v) const noexcept {
                 return has(v)
-                    ? std::make_pair(sparse_[v], true)
+                    ? std::make_pair(sparse_[indexer_(v)], true)
                     : std::make_pair(std::size_t(-1), false);
             }
 
@@ -299,6 +341,7 @@ namespace ecs_hpp
                 return std::max(capacity_ * 2u, nsize);
             }
         private:
+            Indexer indexer_;
             std::vector<T> dense_;
             std::vector<std::size_t> sparse_;
             std::size_t size_{0u};
@@ -317,12 +360,11 @@ namespace ecs_hpp
 {
     namespace detail
     {
-        template < typename K, typename T >
+        template < typename K
+                 , typename T
+                 , typename Indexer = sparse_indexer<K> >
         class sparse_map final {
         public:
-            static_assert(
-                std::is_unsigned<K>::value,
-                "sparse_map<K,T> can contain unsigned integers keys only");
             using iterator = typename std::vector<K>::iterator;
             using const_iterator = typename std::vector<K>::const_iterator;
         public:
@@ -350,7 +392,10 @@ namespace ecs_hpp
                 return keys_.cend();
             }
         public:
-            bool insert(const K k, const T& v) {
+            sparse_map(const Indexer& indexer = Indexer())
+            : keys_(indexer) {}
+
+            bool insert(const K& k, const T& v) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
@@ -363,7 +408,7 @@ namespace ecs_hpp
                 }
             }
 
-            bool insert(const K k, T&& v) {
+            bool insert(const K& k, T&& v) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
@@ -377,7 +422,7 @@ namespace ecs_hpp
             }
 
             template < typename... Args >
-            bool emplace(const K k, Args&&... args) {
+            bool emplace(const K& k, Args&&... args) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
@@ -390,7 +435,10 @@ namespace ecs_hpp
                 }
             }
 
-            bool unordered_erase(const K k) {
+            std::enable_if_t<
+                std::is_nothrow_move_assignable<K>::value,
+                bool>
+            unordered_erase(const K& k) {
                 if ( !keys_.has(k) ) {
                     return false;
                 }
@@ -406,26 +454,26 @@ namespace ecs_hpp
                 values_.clear();
             }
 
-            bool has(const K k) const noexcept {
+            bool has(const K& k) const noexcept {
                 return keys_.has(k);
             }
 
-            T& get_value(const K k) {
+            T& get_value(const K& k) {
                 return values_[keys_.get_index(k)];
             }
 
-            const T& get_value(const K k) const {
+            const T& get_value(const K& k) const {
                 return values_[keys_.get_index(k)];
             }
 
-            T* find_value(const K k) noexcept {
+            T* find_value(const K& k) noexcept {
                 const auto ip = keys_.find_index(k);
                 return ip.second
                     ? &values_[ip.first]
                     : nullptr;
             }
 
-            const T* find_value(const K k) const noexcept {
+            const T* find_value(const K& k) const noexcept {
                 const auto ip = keys_.find_index(k);
                 return ip.second
                     ? &values_[ip.first]
@@ -453,7 +501,7 @@ namespace ecs_hpp
                 return values_.capacity();
             }
         private:
-            sparse_set<K> keys_;
+            sparse_set<K, Indexer> keys_;
             std::vector<T> values_;
         };
     }
