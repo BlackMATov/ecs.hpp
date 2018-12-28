@@ -115,19 +115,29 @@ namespace ecs_hpp
         // tuple_contains
         //
 
-        template < typename V >
-        bool tuple_contains(const std::tuple<>& t, const V& v) {
-            (void)t;
-            (void)v;
-            return false;
+        namespace impl
+        {
+            template < size_t I, typename V, typename... Ts >
+            std::enable_if_t<I == sizeof...(Ts), bool>
+            tuple_contains_impl(const std::tuple<Ts...>& t, const V& v) {
+                (void)t;
+                (void)v;
+                return false;
+            }
+
+            template < size_t I, typename V, typename... Ts >
+            std::enable_if_t<I != sizeof...(Ts), bool>
+            tuple_contains_impl(const std::tuple<Ts...>& t, const V& v) {
+                if ( std::get<I>(t) == v ) {
+                    return true;
+                }
+                return tuple_contains_impl<I + 1>(t, v);
+            }
         }
 
-        template < typename V, typename T, typename... Ts >
-        bool tuple_contains(const std::tuple<T, Ts...>& t, const V& v) {
-            if ( std::get<0>(t) == v ) {
-                return true;
-            }
-            return tuple_contains(tuple_tail(t), v);
+        template < typename V, typename... Ts >
+        bool tuple_contains(const std::tuple<Ts...>& t, const V& v) {
+            return impl::tuple_contains_impl<0>(t, v);
         }
 
         //

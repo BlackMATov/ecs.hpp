@@ -80,6 +80,20 @@ TEST_CASE("detail") {
             REQUIRE(tuple_tail(t3) == std::make_tuple(2, 3));
         }
     }
+    SECTION("tuple_contains") {
+        using namespace ecs::detail;
+        {
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(), nullptr));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1), 0));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1), 2));
+            REQUIRE(tuple_contains(std::make_tuple(1), 1));
+            REQUIRE(tuple_contains(std::make_tuple(1,2,3), 1));
+            REQUIRE(tuple_contains(std::make_tuple(1,2,3), 2));
+            REQUIRE(tuple_contains(std::make_tuple(1,2,3), 3));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1,2,3), 0));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1,2,3), 4));
+        }
+    }
     SECTION("sparse_set") {
         using namespace ecs::detail;
         {
