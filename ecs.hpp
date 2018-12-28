@@ -270,7 +270,17 @@ namespace ecs_hpp
             }
 
             bool insert(const T& v) {
-                return insert(T(v));
+                if ( has(v) ) {
+                    return false;
+                }
+                const std::size_t vi = indexer_(v);
+                if ( vi >= capacity_ ) {
+                    reserve(new_capacity_for_(vi + 1u));
+                }
+                dense_[size_] = v;
+                sparse_[vi] = size_;
+                ++size_;
+                return true;
             }
 
             template < typename... Args >
