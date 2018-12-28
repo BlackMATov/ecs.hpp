@@ -37,6 +37,19 @@ namespace
         return l.x == r.x
             && l.y == r.y;
     }
+
+    struct mult_indexer {
+        template < typename T >
+        std::size_t operator()(const T& v) const noexcept {
+            return static_cast<std::size_t>(v * 2);
+        }
+    };
+
+    struct position_c_indexer {
+        std::size_t operator()(const position_c& v) const noexcept {
+            return static_cast<std::size_t>(v.x);
+        }
+    };
 }
 
 TEST_CASE("detail") {
@@ -70,7 +83,7 @@ TEST_CASE("detail") {
     SECTION("sparse_set") {
         using namespace ecs::detail;
         {
-            sparse_set<unsigned> s;
+            sparse_set<unsigned, mult_indexer> s{mult_indexer{}};
 
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
@@ -84,7 +97,7 @@ TEST_CASE("detail") {
 
             REQUIRE_FALSE(s.empty());
             REQUIRE(s.size() == 1u);
-            REQUIRE(s.capacity() == 43u);
+            REQUIRE(s.capacity() == 85u);
             REQUIRE(s.has(42u));
             REQUIRE_FALSE(s.has(84u));
 
@@ -108,7 +121,7 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(s.has(84u));
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
-            REQUIRE(s.capacity() == 43u * 2);
+            REQUIRE(s.capacity() == 85u * 2);
 
             s.insert(42u);
             s.insert(84u);
@@ -132,6 +145,22 @@ TEST_CASE("detail") {
             REQUIRE(s.find_index(84u).first == 0u);
             REQUIRE_THROWS(s.get_index(42u));
             REQUIRE(s.get_index(84u) == 0u);
+        }
+        {
+            sparse_set<position_c, position_c_indexer> s{position_c_indexer()};
+            REQUIRE(s.insert(position_c(1,2)));
+            REQUIRE_FALSE(s.insert(position_c(1,2)));
+            REQUIRE(s.has(position_c(1,2)));
+            REQUIRE(s.emplace(3,4));
+            REQUIRE(s.has(position_c(3,4)));
+            REQUIRE(s.get_index(position_c(1,2)) == 0);
+            REQUIRE(s.get_index(position_c(3,4)) == 1);
+            REQUIRE(s.find_index(position_c(1,2)).first == 0);
+            REQUIRE(s.find_index(position_c(3,4)).first == 1);
+            REQUIRE(s.find_index(position_c(1,2)).second);
+            REQUIRE(s.find_index(position_c(3,4)).second);
+            REQUIRE(s.unordered_erase(position_c(1,2)));
+            REQUIRE(s.get_index(position_c(3,4)) == 0);
         }
     }
     SECTION("sparse_map") {
@@ -210,6 +239,27 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(m.has(42u));
             REQUIRE_FALSE(m.has(84u));
         }
+        {
+            struct obj_t {
+                int x;
+                obj_t(int nx) : x(nx) {}
+            };
+
+            sparse_map<position_c, obj_t, position_c_indexer> s{position_c_indexer()};
+            REQUIRE(s.insert(position_c(1,2), obj_t{1}));
+            REQUIRE_FALSE(s.insert(position_c(1,2), obj_t{1}));
+            REQUIRE(s.has(position_c(1,2)));
+            REQUIRE(s.emplace(position_c(3,4), obj_t{3}));
+            REQUIRE(s.has(position_c(3,4)));
+            REQUIRE(s.get_value(position_c(1,2)).x == 1);
+            REQUIRE(s.get_value(position_c(3,4)).x == 3);
+            REQUIRE(s.find_value(position_c(1,2))->x == 1);
+            REQUIRE(s.find_value(position_c(3,4))->x == 3);
+            REQUIRE(s.find_value(position_c(1,2)));
+            REQUIRE(s.find_value(position_c(3,4)));
+            REQUIRE(s.unordered_erase(position_c(1,2)));
+            REQUIRE(s.get_value(position_c(3,4)).x == 3);
+        }
     }
 }
 
@@ -253,9 +303,40 @@ TEST_CASE("registry") {
             ecs::registry w;
 
             const auto e1 = w.create_entity();
+
             w.destroy_entity(e1);
             const auto e2 = w.create_entity();
-            REQUIRE(e1 == e2);
+            REQUIRE(e1 != e2);
+            REQUIRE(ecs::entity_id_index(e1.id()) == ecs::entity_id_index(e2.id()));
+            REQUIRE(ecs::entity_id_version(e1.id()) + 1 == ecs::entity_id_version(e2.id()));
+
+            w.destroy_entity(e2);
+            const auto e3 = w.create_entity();
+            REQUIRE(e3 != e2);
+            REQUIRE(ecs::entity_id_index(e2.id()) == ecs::entity_id_index(e3.id()));
+            REQUIRE(ecs::entity_id_version(e2.id()) + 1 == ecs::entity_id_version(e3.id()));
+        }
+        {
+            ecs::registry w;
+            auto e = w.create_entity();
+            const auto e_id = e.id();
+            for ( std::size_t i = 0; i < ecs::entity_id_version_mask; ++i ) {
+                e.destroy();
+                e = w.create_entity();
+                REQUIRE(ecs::entity_id_version(e_id) != ecs::entity_id_version(e.id()));
+            }
+            // entity version wraps around
+            e.destroy();
+            e = w.create_entity();
+            REQUIRE(ecs::entity_id_version(e_id) == ecs::entity_id_version(e.id()));
+        }
+        {
+            ecs::registry w;
+            for ( std::size_t i = 0; i < ecs::entity_id_index_mask; ++i ) {
+                w.create_entity();
+            }
+            // entity index overflow
+            REQUIRE_THROWS_AS(w.create_entity(), std::logic_error);
         }
     }
     SECTION("component_assigning") {
@@ -345,8 +426,8 @@ TEST_CASE("registry") {
             REQUIRE(e2.get_component<velocity_c>().x == 3);
             REQUIRE(e2.get_component<velocity_c>().y == 4);
 
-            REQUIRE_THROWS_AS(e1.get_component<velocity_c>(), ecs::basic_exception);
-            REQUIRE_THROWS_AS(e2.get_component<position_c>(), ecs::basic_exception);
+            REQUIRE_THROWS_AS(e1.get_component<velocity_c>(), std::logic_error);
+            REQUIRE_THROWS_AS(e2.get_component<position_c>(), std::logic_error);
         }
         {
             ecs::registry w;
@@ -371,8 +452,8 @@ TEST_CASE("registry") {
                 REQUIRE(ww.get_component<velocity_c>(e2).x == 3);
                 REQUIRE(ww.get_component<velocity_c>(e2).y == 4);
 
-                REQUIRE_THROWS_AS(ww.get_component<velocity_c>(e1), ecs::basic_exception);
-                REQUIRE_THROWS_AS(ww.get_component<position_c>(e2), ecs::basic_exception);
+                REQUIRE_THROWS_AS(ww.get_component<velocity_c>(e1), std::logic_error);
+                REQUIRE_THROWS_AS(ww.get_component<position_c>(e2), std::logic_error);
 
                 ww.remove_all_components(e1);
                 ww.remove_all_components(e2);
@@ -492,6 +573,34 @@ TEST_CASE("registry") {
                 });
                 REQUIRE(acc1 == e1.id() + e2.id());
                 REQUIRE(acc2 == 6);
+            }
+        }
+        {
+            ecs::registry w;
+
+            {
+                auto e1 = w.create_entity();
+                auto e2 = w.create_entity();
+
+                e1.destroy();
+                e2.destroy();
+            }
+
+            auto e3 = w.create_entity();
+            auto e4 = w.create_entity();
+
+            e3.assign_component<position_c>(1, 2);
+            e4.assign_component<position_c>(3, 4);
+
+            {
+                ecs::entity_id acc1 = 0;
+                int acc2 = 0;
+                w.for_each_component<position_c>([&acc1, &acc2](ecs::entity e, position_c& p){
+                    acc1 += e.id();
+                    acc2 += p.x;
+                });
+                REQUIRE(acc1 == e3.id() + e4.id());
+                REQUIRE(acc2 == 4);
             }
         }
     }

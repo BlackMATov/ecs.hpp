@@ -37,6 +37,12 @@ namespace ecs_hpp
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
 
+    const std::size_t entity_id_index_bits = 22;
+    const std::size_t entity_id_index_mask = (1 << entity_id_index_bits) - 1;
+
+    const std::size_t entity_id_version_bits = 10;
+    const std::size_t entity_id_version_mask = (1 << entity_id_version_bits) - 1;
+
     static_assert(
         std::is_unsigned<family_id>::value,
         "ecs_hpp::family_id must be an unsigned integer");
@@ -44,6 +50,22 @@ namespace ecs_hpp
     static_assert(
         std::is_unsigned<entity_id>::value,
         "ecs_hpp::entity_id must be an unsigned integer");
+
+    static_assert(
+        sizeof(entity_id) == (entity_id_index_bits + entity_id_version_bits) / 8u,
+        "ecs_hpp::entity_id mismatch index and version bits");
+
+    constexpr inline entity_id entity_id_index(entity_id id) noexcept {
+        return id & entity_id_index_mask;
+    }
+
+    constexpr inline entity_id entity_id_version(entity_id id) noexcept {
+        return (id >> entity_id_index_bits) & entity_id_version_mask;
+    }
+
+    constexpr inline entity_id entity_id_join(entity_id index, entity_id version) noexcept {
+        return index | (version << entity_id_index_bits);
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -72,13 +94,19 @@ namespace ecs_hpp
         namespace impl
         {
             template < typename T, typename... Ts, std::size_t... Is >
-            std::tuple<Ts...> tuple_tail_impl(std::tuple<T, Ts...>&& t, std::index_sequence<Is...> iseq) {
+            std::tuple<Ts...> tuple_tail_impl(
+                std::tuple<T, Ts...>&& t,
+                std::index_sequence<Is...> iseq)
+            {
                 (void)iseq;
                 return std::make_tuple(std::move(std::get<Is + 1u>(t))...);
             }
 
             template < typename T, typename... Ts, std::size_t... Is >
-            std::tuple<Ts...> tuple_tail_impl(const std::tuple<T, Ts...>& t, std::index_sequence<Is...> iseq) {
+            std::tuple<Ts...> tuple_tail_impl(
+                const std::tuple<T, Ts...>& t,
+                std::index_sequence<Is...> iseq)
+            {
                 (void)iseq;
                 return std::make_tuple(std::get<Is + 1u>(t)...);
             }
@@ -86,12 +114,16 @@ namespace ecs_hpp
 
         template < typename T, typename... Ts >
         std::tuple<Ts...> tuple_tail(std::tuple<T, Ts...>&& t) {
-            return impl::tuple_tail_impl(std::move(t), std::make_index_sequence<sizeof...(Ts)>());
+            return impl::tuple_tail_impl(
+                std::move(t),
+                std::make_index_sequence<sizeof...(Ts)>());
         }
 
         template < typename T, typename... Ts >
         std::tuple<Ts...> tuple_tail(const std::tuple<T, Ts...>& t) {
-            return impl::tuple_tail_impl(t, std::make_index_sequence<sizeof...(Ts)>());
+            return impl::tuple_tail_impl(
+                t,
+                std::make_index_sequence<sizeof...(Ts)>());
         }
 
         //
@@ -151,6 +183,33 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// detail::sparse_indexer
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename T
+                 , bool = std::is_unsigned<T>::value && sizeof(T) <= sizeof(std::size_t) >
+        struct sparse_unsigned_indexer {
+            std::size_t operator()(const T v) const noexcept {
+                return static_cast<std::size_t>(v);
+            }
+        };
+
+        template < typename T >
+        struct sparse_unsigned_indexer<T, false> {};
+
+        template < typename T >
+        struct sparse_indexer
+        : public sparse_unsigned_indexer<T> {};
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // detail::sparse_set
 //
 // -----------------------------------------------------------------------------
@@ -159,12 +218,10 @@ namespace ecs_hpp
 {
     namespace detail
     {
-        template < typename T >
+        template < typename T
+                 , typename Indexer = sparse_indexer<T> >
         class sparse_set final {
         public:
-            static_assert(
-                std::is_unsigned<T>::value,
-                "sparse_set<T> can contain an unsigned integers only");
             using iterator = typename std::vector<T>::iterator;
             using const_iterator = typename std::vector<T>::const_iterator;
         public:
@@ -195,27 +252,52 @@ namespace ecs_hpp
                 return cbegin() + static_cast<dt>(size_);
             }
         public:
-            bool insert(const T v) {
+            sparse_set(const Indexer& indexer = Indexer())
+            : indexer_(indexer) {}
+
+            bool insert(T&& v) {
                 if ( has(v) ) {
                     return false;
                 }
-                if ( v >= capacity_ ) {
-                    reserve(new_capacity_for_(v + 1u));
+                const std::size_t vi = indexer_(v);
+                if ( vi >= capacity_ ) {
+                    reserve(new_capacity_for_(vi + 1u));
                 }
-                dense_[size_] = v;
-                sparse_[v] = size_;
+                dense_[size_] = std::move(v);
+                sparse_[vi] = size_;
                 ++size_;
                 return true;
             }
 
-            bool unordered_erase(const T v) noexcept {
+            bool insert(const T& v) {
+                if ( has(v) ) {
+                    return false;
+                }
+                const std::size_t vi = indexer_(v);
+                if ( vi >= capacity_ ) {
+                    reserve(new_capacity_for_(vi + 1u));
+                }
+                dense_[size_] = v;
+                sparse_[vi] = size_;
+                ++size_;
+                return true;
+            }
+
+            template < typename... Args >
+            bool emplace(Args&&... args) {
+                return insert(T(std::forward<Args>(args)...));
+            }
+
+            bool unordered_erase(const T& v)
+                noexcept(std::is_nothrow_move_assignable<T>::value)
+            {
                 if ( !has(v) ) {
                     return false;
                 }
-                const std::size_t index = sparse_[v];
-                const T last = dense_[size_ - 1u];
-                dense_[index] = last;
-                sparse_[last] = index;
+                const std::size_t vi = indexer_(v);
+                const std::size_t index = sparse_[vi];
+                dense_[index] = std::move(dense_[size_ - 1u]);
+                sparse_[indexer_(dense_[index])] = index;
                 --size_;
                 return true;
             }
@@ -224,29 +306,31 @@ namespace ecs_hpp
                 size_ = 0u;
             }
 
-            bool has(const T v) const noexcept {
-                return v < capacity_
-                    && sparse_[v] < size_
-                    && dense_[sparse_[v]] == v;
+            bool has(const T& v) const noexcept {
+                const std::size_t vi = indexer_(v);
+                return vi < capacity_
+                    && sparse_[vi] < size_
+                    && dense_[sparse_[vi]] == v;
             }
 
-            const_iterator find(const T v) const noexcept {
+            const_iterator find(const T& v) const noexcept {
+                const std::size_t vi = indexer_(v);
                 return has(v)
-                    ? begin() + sparse_[v]
+                    ? begin() + sparse_[vi]
                     : end();
             }
 
-            std::size_t get_index(const T v) const {
+            std::size_t get_index(const T& v) const {
                 const auto p = find_index(v);
                 if ( p.second ) {
                     return p.first;
                 }
-                throw std::out_of_range("sparse_set<T>");
+                throw std::logic_error("ecs_hpp::sparse_set(value not found)");
             }
 
-            std::pair<std::size_t,bool> find_index(const T v) const noexcept {
+            std::pair<std::size_t,bool> find_index(const T& v) const noexcept {
                 return has(v)
-                    ? std::make_pair(sparse_[v], true)
+                    ? std::make_pair(sparse_[indexer_(v)], true)
                     : std::make_pair(std::size_t(-1), false);
             }
 
@@ -281,7 +365,7 @@ namespace ecs_hpp
             std::size_t new_capacity_for_(std::size_t nsize) const {
                 const std::size_t ms = max_size();
                 if ( nsize > ms ) {
-                    throw std::length_error("sparse_set<T>");
+                    throw std::length_error("ecs_hpp::sparse_set");
                 }
                 if ( capacity_ >= ms / 2u ) {
                     return ms;
@@ -289,6 +373,7 @@ namespace ecs_hpp
                 return std::max(capacity_ * 2u, nsize);
             }
         private:
+            Indexer indexer_;
             std::vector<T> dense_;
             std::vector<std::size_t> sparse_;
             std::size_t size_{0u};
@@ -307,12 +392,11 @@ namespace ecs_hpp
 {
     namespace detail
     {
-        template < typename K, typename T >
+        template < typename K
+                 , typename T
+                 , typename Indexer = sparse_indexer<K> >
         class sparse_map final {
         public:
-            static_assert(
-                std::is_unsigned<K>::value,
-                "sparse_map<K,T> can contain unsigned integers keys only");
             using iterator = typename std::vector<K>::iterator;
             using const_iterator = typename std::vector<K>::const_iterator;
         public:
@@ -340,7 +424,10 @@ namespace ecs_hpp
                 return keys_.cend();
             }
         public:
-            bool insert(const K k, const T& v) {
+            sparse_map(const Indexer& indexer = Indexer())
+            : keys_(indexer) {}
+
+            bool insert(const K& k, const T& v) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
@@ -353,7 +440,7 @@ namespace ecs_hpp
                 }
             }
 
-            bool insert(const K k, T&& v) {
+            bool insert(const K& k, T&& v) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
@@ -367,7 +454,7 @@ namespace ecs_hpp
             }
 
             template < typename... Args >
-            bool emplace(const K k, Args&&... args) {
+            bool emplace(const K& k, Args&&... args) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
@@ -380,7 +467,10 @@ namespace ecs_hpp
                 }
             }
 
-            bool unordered_erase(const K k) {
+            std::enable_if_t<
+                std::is_nothrow_move_assignable<K>::value,
+                bool>
+            unordered_erase(const K& k) {
                 if ( !keys_.has(k) ) {
                     return false;
                 }
@@ -396,26 +486,26 @@ namespace ecs_hpp
                 values_.clear();
             }
 
-            bool has(const K k) const noexcept {
+            bool has(const K& k) const noexcept {
                 return keys_.has(k);
             }
 
-            T& get_value(const K k) {
+            T& get_value(const K& k) {
                 return values_[keys_.get_index(k)];
             }
 
-            const T& get_value(const K k) const {
+            const T& get_value(const K& k) const {
                 return values_[keys_.get_index(k)];
             }
 
-            T* find_value(const K k) noexcept {
+            T* find_value(const K& k) noexcept {
                 const auto ip = keys_.find_index(k);
                 return ip.second
                     ? &values_[ip.first]
                     : nullptr;
             }
 
-            const T* find_value(const K k) const noexcept {
+            const T* find_value(const K& k) const noexcept {
                 const auto ip = keys_.find_index(k);
                 return ip.second
                     ? &values_[ip.first]
@@ -443,8 +533,26 @@ namespace ecs_hpp
                 return values_.capacity();
             }
         private:
-            sparse_set<K> keys_;
+            sparse_set<K, Indexer> keys_;
             std::vector<T> values_;
+        };
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
+// detail::entity_id_indexer
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        struct entity_id_indexer {
+            std::size_t operator()(entity_id id) const noexcept {
+                return entity_id_index(id);
+            }
         };
     }
 }
@@ -484,7 +592,7 @@ namespace ecs_hpp
             void for_each_component(F&& f) const noexcept;
         private:
             registry& owner_;
-            detail::sparse_map<entity_id, T> components_;
+            detail::sparse_map<entity_id, T, entity_id_indexer> components_;
         };
 
         template < typename T >
@@ -539,21 +647,6 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
-// exceptions
-//
-// -----------------------------------------------------------------------------
-
-namespace ecs_hpp
-{
-    class basic_exception : public std::logic_error {
-    public:
-        basic_exception(const char* msg)
-        : std::logic_error(msg) {}
-    };
-}
-
-// -----------------------------------------------------------------------------
-//
 // entity
 //
 // -----------------------------------------------------------------------------
@@ -604,7 +697,7 @@ namespace ecs_hpp
         template < typename... Ts >
         std::tuple<const Ts*...> find_components() const noexcept;
     private:
-        registry& owner_;
+        registry* owner_;
         entity_id id_{0u};
     };
 
@@ -761,7 +854,7 @@ namespace ecs_hpp
     private:
         entity_id last_entity_id_{0u};
         std::vector<entity_id> free_entity_ids_;
-        detail::sparse_set<entity_id> entity_ids_;
+        detail::sparse_set<entity_id, detail::entity_id_indexer> entity_ids_;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
         detail::sparse_map<family_id, storage_uptr> storages_;
@@ -780,14 +873,14 @@ namespace ecs_hpp
 namespace ecs_hpp
 {
     inline entity::entity(registry& owner)
-    : owner_(owner) {}
+    : owner_(&owner) {}
 
     inline entity::entity(registry& owner, entity_id id)
-    : owner_(owner)
+    : owner_(&owner)
     , id_(id) {}
 
     inline const registry& entity::owner() const noexcept {
-        return owner_;
+        return *owner_;
     }
 
     inline entity_id entity::id() const noexcept {
@@ -795,72 +888,72 @@ namespace ecs_hpp
     }
 
     inline bool entity::destroy() {
-        return owner_.destroy_entity(*this);
+        return (*owner_).destroy_entity(*this);
     }
 
     inline bool entity::is_alive() const noexcept {
-        return detail::as_const(owner_).is_entity_alive(*this);
+        return detail::as_const(*owner_).is_entity_alive(*this);
     }
 
     template < typename T, typename... Args >
     bool entity::assign_component(Args&&... args) {
-        return owner_.assign_component<T>(
+        return (*owner_).assign_component<T>(
             *this,
             std::forward<Args>(args)...);
     }
 
     template < typename T >
     bool entity::remove_component() {
-        return owner_.remove_component<T>(*this);
+        return (*owner_).remove_component<T>(*this);
     }
 
     template < typename T >
     bool entity::exists_component() const noexcept {
-        return detail::as_const(owner_).exists_component<T>(*this);
+        return detail::as_const(*owner_).exists_component<T>(*this);
     }
 
     inline std::size_t entity::remove_all_components() noexcept {
-        return owner_.remove_all_components(*this);
+        return (*owner_).remove_all_components(*this);
     }
 
     template < typename T >
     T& entity::get_component() {
-        return owner_.get_component<T>(*this);
+        return (*owner_).get_component<T>(*this);
     }
 
     template < typename T >
     const T& entity::get_component() const {
-        return detail::as_const(owner_).get_component<T>(*this);
+        return detail::as_const(*owner_).get_component<T>(*this);
     }
 
     template < typename T >
     T* entity::find_component() noexcept {
-        return owner_.find_component<T>(*this);
+        return (*owner_).find_component<T>(*this);
     }
 
     template < typename T >
     const T* entity::find_component() const noexcept {
-        return detail::as_const(owner_).find_component<T>(*this);
+        return detail::as_const(*owner_).find_component<T>(*this);
     }
 
     template < typename... Ts >
     std::tuple<Ts&...> entity::get_components() {
-        return owner_.get_components<Ts...>(*this);
+        return (*owner_).get_components<Ts...>(*this);
     }
 
     template < typename... Ts >
     std::tuple<const Ts&...> entity::get_components() const {
-        return detail::as_const(owner_).get_components<Ts...>(*this);
+        return detail::as_const(*owner_).get_components<Ts...>(*this);
     }
 
     template < typename... Ts >
     std::tuple<Ts*...> entity::find_components() noexcept {
-        return owner_.find_components<Ts...>(*this);
+        return (*owner_).find_components<Ts...>(*this);
     }
 
     template < typename... Ts >
     std::tuple<const Ts*...> entity::find_components() const noexcept {
-        return detail::as_const(owner_).find_components<Ts...>(*this);
+        return detail::as_const(*owner_).find_components<Ts...>(*this);
     }
 
     inline bool operator==(const entity& l, const entity& r) noexcept {
@@ -883,16 +976,22 @@ namespace ecs_hpp
 {
     inline entity registry::create_entity() {
         if ( !free_entity_ids_.empty() ) {
-            auto ent = entity(*this, free_entity_ids_.back());
-            entity_ids_.insert(ent.id());
+            const auto free_ent_id = free_entity_ids_.back();
+            const auto new_ent_id = entity_id_join(
+                entity_id_index(free_ent_id),
+                entity_id_version(free_ent_id) + 1u);
+            auto ent = entity(*this, new_ent_id);
+            entity_ids_.insert(new_ent_id);
             free_entity_ids_.pop_back();
             return ent;
 
         }
-        assert(last_entity_id_ < std::numeric_limits<entity_id>::max());
-        auto ent = entity(*this, ++last_entity_id_);
-        entity_ids_.insert(ent.id());
-        return ent;
+        if ( last_entity_id_ < entity_id_index_mask ) {
+            auto ent = entity(*this, ++last_entity_id_);
+            entity_ids_.insert(ent.id());
+            return ent;
+        }
+        throw std::logic_error("ecs_hpp::registry(entity index overlow)");
     }
 
     inline bool registry::destroy_entity(const entity& ent) {
@@ -951,7 +1050,7 @@ namespace ecs_hpp
         if ( component ) {
             return *component;
         }
-        throw basic_exception("component not found");
+        throw std::logic_error("ecs_hpp::registry(component not found)");
     }
 
     template < typename T >
@@ -960,7 +1059,7 @@ namespace ecs_hpp
         if ( component ) {
             return *component;
         }
-        throw basic_exception("component not found");
+        throw std::logic_error("ecs_hpp::registry(component not found)");
     }
 
     template < typename T >
