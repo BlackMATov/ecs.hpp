@@ -212,7 +212,8 @@ namespace ecs_hpp
     namespace detail
     {
         template < typename T
-                 , bool = std::is_unsigned<T>::value && sizeof(T) <= sizeof(std::size_t) >
+                 , bool = std::is_unsigned<T>::value
+                    && sizeof(T) <= sizeof(std::size_t) >
         struct sparse_unsigned_indexer {
             std::size_t operator()(const T v) const noexcept {
                 return static_cast<std::size_t>(v);
@@ -250,8 +251,7 @@ namespace ecs_hpp
             }
 
             iterator end() noexcept {
-                using dt = typename std::iterator_traits<iterator>::difference_type;
-                return begin() + static_cast<dt>(size_);
+                return dense_.end();
             }
 
             const_iterator begin() const noexcept {
@@ -259,8 +259,7 @@ namespace ecs_hpp
             }
 
             const_iterator end() const noexcept {
-                using dt = typename std::iterator_traits<const_iterator>::difference_type;
-                return begin() + static_cast<dt>(size_);
+                return dense_.end();
             }
 
             const_iterator cbegin() const noexcept {
@@ -268,8 +267,7 @@ namespace ecs_hpp
             }
 
             const_iterator cend() const noexcept {
-                using dt = typename std::iterator_traits<const_iterator>::difference_type;
-                return cbegin() + static_cast<dt>(size_);
+                return dense_.cend();
             }
         public:
             sparse_set(const Indexer& indexer = Indexer())
@@ -280,12 +278,11 @@ namespace ecs_hpp
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
-                if ( vi >= capacity_ ) {
-                    reserve(new_capacity_for_(vi + 1u));
+                if ( vi >= sparse_.size() ) {
+                    sparse_.resize(new_sparse_size_for_(vi + 1u));
                 }
-                dense_[size_] = std::move(v);
-                sparse_[vi] = size_;
-                ++size_;
+                dense_.push_back(std::move(v));
+                sparse_[vi] = dense_.size() - 1u;
                 return true;
             }
 
@@ -294,12 +291,11 @@ namespace ecs_hpp
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
-                if ( vi >= capacity_ ) {
-                    reserve(new_capacity_for_(vi + 1u));
+                if ( vi >= sparse_.size() ) {
+                    sparse_.resize(new_sparse_size_for_(vi + 1u));
                 }
-                dense_[size_] = v;
-                sparse_[vi] = size_;
-                ++size_;
+                dense_.push_back(v);
+                sparse_[vi] = dense_.size() - 1u;
                 return true;
             }
 
@@ -315,21 +311,21 @@ namespace ecs_hpp
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
-                const std::size_t index = sparse_[vi];
-                dense_[index] = std::move(dense_[size_ - 1u]);
-                sparse_[indexer_(dense_[index])] = index;
-                --size_;
+                const std::size_t dense_index = sparse_[vi];
+                dense_[dense_index] = std::move(dense_.back());
+                sparse_[indexer_(dense_[dense_index])] = dense_index;
+                dense_.pop_back();
                 return true;
             }
 
             void clear() noexcept {
-                size_ = 0u;
+                dense_.clear();
             }
 
             bool has(const T& v) const noexcept {
                 const std::size_t vi = indexer_(v);
-                return vi < capacity_
-                    && sparse_[vi] < size_
+                return vi < sparse_.size()
+                    && sparse_[vi] < dense_.size()
                     && dense_[sparse_[vi]] == v;
             }
 
@@ -355,49 +351,27 @@ namespace ecs_hpp
             }
 
             bool empty() const noexcept {
-                return size_ == 0u;
-            }
-
-            void reserve(std::size_t ncapacity) {
-                if ( ncapacity > capacity_ ) {
-                    std::vector<T> ndense(ncapacity);
-                    std::vector<std::size_t> nsparse(ncapacity);
-                    std::copy(dense_.begin(), dense_.end(), ndense.begin());
-                    std::copy(sparse_.begin(), sparse_.end(), nsparse.begin());
-                    ndense.swap(dense_);
-                    nsparse.swap(sparse_);
-                    capacity_ = ncapacity;
-                }
+                return dense_.empty();
             }
 
             std::size_t size() const noexcept {
-                return size_;
-            }
-
-            std::size_t max_size() const noexcept {
-                return std::min(dense_.max_size(), sparse_.max_size());
-            }
-
-            std::size_t capacity() const noexcept {
-                return capacity_;
+                return dense_.size();
             }
         private:
-            std::size_t new_capacity_for_(std::size_t nsize) const {
-                const std::size_t ms = max_size();
+            std::size_t new_sparse_size_for_(std::size_t nsize) const {
+                const std::size_t ms = sparse_.max_size();
                 if ( nsize > ms ) {
                     throw std::length_error("ecs_hpp::sparse_set");
                 }
-                if ( capacity_ >= ms / 2u ) {
+                if ( sparse_.size() >= ms / 2u ) {
                     return ms;
                 }
-                return std::max(capacity_ * 2u, nsize);
+                return std::max(sparse_.size() * 2u, nsize);
             }
         private:
             Indexer indexer_;
             std::vector<T> dense_;
             std::vector<std::size_t> sparse_;
-            std::size_t size_{0u};
-            std::size_t capacity_{0u};
         };
     }
 }
@@ -494,8 +468,8 @@ namespace ecs_hpp
                 if ( !keys_.has(k) ) {
                     return false;
                 }
-                const std::size_t index = keys_.get_dense_index(k);
-                values_[index] = std::move(values_.back());
+                const std::size_t value_index = keys_.get_dense_index(k);
+                values_[value_index] = std::move(values_.back());
                 values_.pop_back();
                 keys_.unordered_erase(k);
                 return true;
@@ -519,16 +493,16 @@ namespace ecs_hpp
             }
 
             T* find(const K& k) noexcept {
-                const auto ip = keys_.find_dense_index(k);
-                return ip.second
-                    ? &values_[ip.first]
+                const auto value_index_p = keys_.find_dense_index(k);
+                return value_index_p.second
+                    ? &values_[value_index_p.first]
                     : nullptr;
             }
 
             const T* find(const K& k) const noexcept {
-                const auto ip = keys_.find_dense_index(k);
-                return ip.second
-                    ? &values_[ip.first]
+                const auto value_index_p = keys_.find_dense_index(k);
+                return value_index_p.second
+                    ? &values_[value_index_p.first]
                     : nullptr;
             }
 
@@ -536,21 +510,8 @@ namespace ecs_hpp
                 return values_.empty();
             }
 
-            void reserve(std::size_t ncapacity) {
-                keys_.reserve(ncapacity);
-                values_.reserve(ncapacity);
-            }
-
             std::size_t size() const noexcept {
                 return values_.size();
-            }
-
-            std::size_t max_size() const noexcept {
-                return std::min(keys_.max_size(), values_.max_size());
-            }
-
-            std::size_t capacity() const noexcept {
-                return values_.capacity();
             }
         private:
             sparse_set<K, Indexer> keys_;

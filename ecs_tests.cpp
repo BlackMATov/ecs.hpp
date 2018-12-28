@@ -112,7 +112,6 @@ TEST_CASE("detail") {
 
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
-            REQUIRE(s.capacity() == 0u);
             REQUIRE_FALSE(s.has(42u));
             REQUIRE(s.find(42u) == s.end());
             REQUIRE_FALSE(s.find_dense_index(42u).second);
@@ -122,7 +121,6 @@ TEST_CASE("detail") {
 
             REQUIRE_FALSE(s.empty());
             REQUIRE(s.size() == 1u);
-            REQUIRE(s.capacity() == 85u);
             REQUIRE(s.has(42u));
             REQUIRE_FALSE(s.has(84u));
 
@@ -146,7 +144,6 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(s.has(84u));
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
-            REQUIRE(s.capacity() == 85u * 2);
 
             s.insert(42u);
             s.insert(84u);
@@ -200,7 +197,6 @@ TEST_CASE("detail") {
 
             REQUIRE(m.empty());
             REQUIRE_FALSE(m.size());
-            REQUIRE(m.capacity() == 0u);
             REQUIRE_FALSE(m.has(42u));
             REQUIRE_THROWS(m.get(42u));
             REQUIRE_THROWS(as_const(m).get(42u));
@@ -223,7 +219,6 @@ TEST_CASE("detail") {
 
             REQUIRE_FALSE(m.empty());
             REQUIRE(m.size() == 3u);
-            REQUIRE(m.capacity() >= 3u);
             REQUIRE(m.has(21u));
             REQUIRE(m.has(42u));
             REQUIRE(m.has(84u));
