@@ -80,6 +80,7 @@ private:
 
 ecs_hpp::registry world;
 world.add_system<movement_system>();
+world.add_system<gravity_system>(9.8f);
 
 auto entity_one = world.create_entity();
 world.assign_component<position_component>(entity_one, 4.f, 2.f);

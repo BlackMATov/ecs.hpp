@@ -80,6 +80,31 @@ TEST_CASE("detail") {
             REQUIRE(tuple_tail(t3) == std::make_tuple(2, 3));
         }
     }
+    SECTION("tuple_contains") {
+        using namespace ecs::detail;
+        {
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(), nullptr));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1), 0));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1), 2));
+            REQUIRE(tuple_contains(std::make_tuple(1), 1));
+            REQUIRE(tuple_contains(std::make_tuple(1,2,3), 1));
+            REQUIRE(tuple_contains(std::make_tuple(1,2,3), 2));
+            REQUIRE(tuple_contains(std::make_tuple(1,2,3), 3));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1,2,3), 0));
+            REQUIRE_FALSE(tuple_contains(std::make_tuple(1,2,3), 4));
+        }
+    }
+    SECTION("entity_id") {
+        using namespace ecs::detail;
+        {
+            REQUIRE(entity_id_index(entity_id_join(10u, 20u)) == 10u);
+            REQUIRE(entity_id_version(entity_id_join(10u, 20u)) == 20u);
+            REQUIRE(upgrade_entity_id(entity_id_join(10u, 20u)) == entity_id_join(10u, 21u));
+            REQUIRE(upgrade_entity_id(entity_id_join(0u, 1023u)) == entity_id_join(0u, 0u));
+            REQUIRE(upgrade_entity_id(entity_id_join(1u, 1023u)) == entity_id_join(1u, 0u));
+            REQUIRE(upgrade_entity_id(entity_id_join(2048u, 1023u)) == entity_id_join(2048u, 0u));
+        }
+    }
     SECTION("sparse_set") {
         using namespace ecs::detail;
         {
@@ -87,7 +112,6 @@ TEST_CASE("detail") {
 
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
-            REQUIRE(s.capacity() == 0u);
             REQUIRE_FALSE(s.has(42u));
             REQUIRE(s.find(42u) == s.end());
             REQUIRE_FALSE(s.find_dense_index(42u).second);
@@ -97,7 +121,6 @@ TEST_CASE("detail") {
 
             REQUIRE_FALSE(s.empty());
             REQUIRE(s.size() == 1u);
-            REQUIRE(s.capacity() == 85u);
             REQUIRE(s.has(42u));
             REQUIRE_FALSE(s.has(84u));
 
@@ -121,7 +144,6 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(s.has(84u));
             REQUIRE(s.empty());
             REQUIRE_FALSE(s.size());
-            REQUIRE(s.capacity() == 85u * 2);
 
             s.insert(42u);
             s.insert(84u);
@@ -175,7 +197,6 @@ TEST_CASE("detail") {
 
             REQUIRE(m.empty());
             REQUIRE_FALSE(m.size());
-            REQUIRE(m.capacity() == 0u);
             REQUIRE_FALSE(m.has(42u));
             REQUIRE_THROWS(m.get(42u));
             REQUIRE_THROWS(as_const(m).get(42u));
@@ -198,7 +219,6 @@ TEST_CASE("detail") {
 
             REQUIRE_FALSE(m.empty());
             REQUIRE(m.size() == 3u);
-            REQUIRE(m.capacity() >= 3u);
             REQUIRE(m.has(21u));
             REQUIRE(m.has(42u));
             REQUIRE(m.has(84u));
@@ -459,12 +479,6 @@ TEST_CASE("registry") {
 
                 REQUIRE_THROWS_AS(ww.get_component<velocity_c>(e1), std::logic_error);
                 REQUIRE_THROWS_AS(ww.get_component<position_c>(e2), std::logic_error);
-
-                ww.remove_all_components(e1);
-                ww.remove_all_components(e2);
-
-                REQUIRE_FALSE(ww.find_component<position_c>(e1));
-                REQUIRE_FALSE(ww.find_component<velocity_c>(e2));
             }
         }
         {
@@ -545,6 +559,30 @@ TEST_CASE("registry") {
             REQUIRE(e1.get_component<velocity_c>().y == 40);
         }
     }
+    SECTION("for_each_entity") {
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            {
+                ecs::entity_id acc1 = 0;
+                w.for_each_entity([&acc1](const ecs::entity& e){
+                    acc1 += e.id();
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+            }
+            {
+                const ecs::registry& ww = w;
+                ecs::entity_id acc1 = 0;
+                ww.for_each_entity([&acc1](const ecs::const_entity& e){
+                    acc1 += e.id();
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+            }
+        }
+    }
     SECTION("for_each_component") {
         {
             ecs::registry w;
@@ -572,7 +610,7 @@ TEST_CASE("registry") {
                 const ecs::registry& ww = w;
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
-                ww.for_each_component<position_c>([&acc1, &acc2](ecs::entity e, const position_c& p){
+                ww.for_each_component<position_c>([&acc1, &acc2](ecs::const_entity e, const position_c& p){
                     acc1 += e.id();
                     acc2 += p.x;
                 });
@@ -645,7 +683,7 @@ TEST_CASE("registry") {
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
                 ww.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
-                    ecs::entity e, const position_c& p, const velocity_c& v)
+                    ecs::const_entity e, const position_c& p, const velocity_c& v)
                 {
                     acc1 += e.id();
                     acc2 += p.x + v.x;
@@ -747,6 +785,7 @@ TEST_CASE("example") {
 
     ecs_hpp::registry world;
     world.add_system<movement_system>();
+    world.add_system<gravity_system>(9.8f);
 
     auto entity_one = world.create_entity();
     world.assign_component<position_component>(entity_one, 4.f, 2.f);

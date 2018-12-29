@@ -29,6 +29,8 @@
 namespace ecs_hpp
 {
     class entity;
+    class const_entity;
+
     class system;
     class registry;
 
@@ -115,19 +117,29 @@ namespace ecs_hpp
         // tuple_contains
         //
 
-        template < typename V >
-        bool tuple_contains(const std::tuple<>& t, const V& v) {
-            (void)t;
-            (void)v;
-            return false;
+        namespace impl
+        {
+            template < size_t I, typename V, typename... Ts >
+            std::enable_if_t<I == sizeof...(Ts), bool>
+            tuple_contains_impl(const std::tuple<Ts...>& t, const V& v) {
+                (void)t;
+                (void)v;
+                return false;
+            }
+
+            template < size_t I, typename V, typename... Ts >
+            std::enable_if_t<I != sizeof...(Ts), bool>
+            tuple_contains_impl(const std::tuple<Ts...>& t, const V& v) {
+                if ( std::get<I>(t) == v ) {
+                    return true;
+                }
+                return tuple_contains_impl<I + 1>(t, v);
+            }
         }
 
-        template < typename V, typename T, typename... Ts >
-        bool tuple_contains(const std::tuple<T, Ts...>& t, const V& v) {
-            if ( std::get<0>(t) == v ) {
-                return true;
-            }
-            return tuple_contains(tuple_tail(t), v);
+        template < typename V, typename... Ts >
+        bool tuple_contains(const std::tuple<Ts...>& t, const V& v) {
+            return impl::tuple_contains_impl<0>(t, v);
         }
 
         //
@@ -202,7 +214,8 @@ namespace ecs_hpp
     namespace detail
     {
         template < typename T
-                 , bool = std::is_unsigned<T>::value && sizeof(T) <= sizeof(std::size_t) >
+                 , bool = std::is_unsigned<T>::value
+                    && sizeof(T) <= sizeof(std::size_t) >
         struct sparse_unsigned_indexer {
             std::size_t operator()(const T v) const noexcept {
                 return static_cast<std::size_t>(v);
@@ -240,8 +253,7 @@ namespace ecs_hpp
             }
 
             iterator end() noexcept {
-                using dt = typename std::iterator_traits<iterator>::difference_type;
-                return begin() + static_cast<dt>(size_);
+                return dense_.end();
             }
 
             const_iterator begin() const noexcept {
@@ -249,8 +261,7 @@ namespace ecs_hpp
             }
 
             const_iterator end() const noexcept {
-                using dt = typename std::iterator_traits<const_iterator>::difference_type;
-                return begin() + static_cast<dt>(size_);
+                return dense_.end();
             }
 
             const_iterator cbegin() const noexcept {
@@ -258,8 +269,7 @@ namespace ecs_hpp
             }
 
             const_iterator cend() const noexcept {
-                using dt = typename std::iterator_traits<const_iterator>::difference_type;
-                return cbegin() + static_cast<dt>(size_);
+                return dense_.cend();
             }
         public:
             sparse_set(const Indexer& indexer = Indexer())
@@ -270,12 +280,11 @@ namespace ecs_hpp
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
-                if ( vi >= capacity_ ) {
-                    reserve(new_capacity_for_(vi + 1u));
+                if ( vi >= sparse_.size() ) {
+                    sparse_.resize(new_sparse_size_for_(vi + 1u));
                 }
-                dense_[size_] = std::move(v);
-                sparse_[vi] = size_;
-                ++size_;
+                dense_.push_back(std::move(v));
+                sparse_[vi] = dense_.size() - 1u;
                 return true;
             }
 
@@ -284,12 +293,11 @@ namespace ecs_hpp
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
-                if ( vi >= capacity_ ) {
-                    reserve(new_capacity_for_(vi + 1u));
+                if ( vi >= sparse_.size() ) {
+                    sparse_.resize(new_sparse_size_for_(vi + 1u));
                 }
-                dense_[size_] = v;
-                sparse_[vi] = size_;
-                ++size_;
+                dense_.push_back(v);
+                sparse_[vi] = dense_.size() - 1u;
                 return true;
             }
 
@@ -305,21 +313,21 @@ namespace ecs_hpp
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
-                const std::size_t index = sparse_[vi];
-                dense_[index] = std::move(dense_[size_ - 1u]);
-                sparse_[indexer_(dense_[index])] = index;
-                --size_;
+                const std::size_t dense_index = sparse_[vi];
+                dense_[dense_index] = std::move(dense_.back());
+                sparse_[indexer_(dense_[dense_index])] = dense_index;
+                dense_.pop_back();
                 return true;
             }
 
             void clear() noexcept {
-                size_ = 0u;
+                dense_.clear();
             }
 
             bool has(const T& v) const noexcept {
                 const std::size_t vi = indexer_(v);
-                return vi < capacity_
-                    && sparse_[vi] < size_
+                return vi < sparse_.size()
+                    && sparse_[vi] < dense_.size()
                     && dense_[sparse_[vi]] == v;
             }
 
@@ -345,49 +353,27 @@ namespace ecs_hpp
             }
 
             bool empty() const noexcept {
-                return size_ == 0u;
-            }
-
-            void reserve(std::size_t ncapacity) {
-                if ( ncapacity > capacity_ ) {
-                    std::vector<T> ndense(ncapacity);
-                    std::vector<std::size_t> nsparse(ncapacity);
-                    std::copy(dense_.begin(), dense_.end(), ndense.begin());
-                    std::copy(sparse_.begin(), sparse_.end(), nsparse.begin());
-                    ndense.swap(dense_);
-                    nsparse.swap(sparse_);
-                    capacity_ = ncapacity;
-                }
+                return dense_.empty();
             }
 
             std::size_t size() const noexcept {
-                return size_;
-            }
-
-            std::size_t max_size() const noexcept {
-                return std::min(dense_.max_size(), sparse_.max_size());
-            }
-
-            std::size_t capacity() const noexcept {
-                return capacity_;
+                return dense_.size();
             }
         private:
-            std::size_t new_capacity_for_(std::size_t nsize) const {
-                const std::size_t ms = max_size();
+            std::size_t new_sparse_size_for_(std::size_t nsize) const {
+                const std::size_t ms = sparse_.max_size();
                 if ( nsize > ms ) {
                     throw std::length_error("ecs_hpp::sparse_set");
                 }
-                if ( capacity_ >= ms / 2u ) {
+                if ( sparse_.size() >= ms / 2u ) {
                     return ms;
                 }
-                return std::max(capacity_ * 2u, nsize);
+                return std::max(sparse_.size() * 2u, nsize);
             }
         private:
             Indexer indexer_;
             std::vector<T> dense_;
             std::vector<std::size_t> sparse_;
-            std::size_t size_{0u};
-            std::size_t capacity_{0u};
         };
     }
 }
@@ -484,8 +470,8 @@ namespace ecs_hpp
                 if ( !keys_.has(k) ) {
                     return false;
                 }
-                const std::size_t index = keys_.get_dense_index(k);
-                values_[index] = std::move(values_.back());
+                const std::size_t value_index = keys_.get_dense_index(k);
+                values_[value_index] = std::move(values_.back());
                 values_.pop_back();
                 keys_.unordered_erase(k);
                 return true;
@@ -509,16 +495,16 @@ namespace ecs_hpp
             }
 
             T* find(const K& k) noexcept {
-                const auto ip = keys_.find_dense_index(k);
-                return ip.second
-                    ? &values_[ip.first]
+                const auto value_index_p = keys_.find_dense_index(k);
+                return value_index_p.second
+                    ? &values_[value_index_p.first]
                     : nullptr;
             }
 
             const T* find(const K& k) const noexcept {
-                const auto ip = keys_.find_dense_index(k);
-                return ip.second
-                    ? &values_[ip.first]
+                const auto value_index_p = keys_.find_dense_index(k);
+                return value_index_p.second
+                    ? &values_[value_index_p.first]
                     : nullptr;
             }
 
@@ -526,21 +512,8 @@ namespace ecs_hpp
                 return values_.empty();
             }
 
-            void reserve(std::size_t ncapacity) {
-                keys_.reserve(ncapacity);
-                values_.reserve(ncapacity);
-            }
-
             std::size_t size() const noexcept {
                 return values_.size();
-            }
-
-            std::size_t max_size() const noexcept {
-                return std::min(keys_.max_size(), values_.max_size());
-            }
-
-            std::size_t capacity() const noexcept {
-                return values_.capacity();
             }
         private:
             sparse_set<K, Indexer> keys_;
@@ -649,7 +622,7 @@ namespace ecs_hpp
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) const noexcept {
             for ( const auto id : components_ ) {
-                f(entity(owner_, id), components_.get(id));
+                f(const_entity(owner_, id), components_.get(id));
             }
         }
     }
@@ -665,8 +638,8 @@ namespace ecs_hpp
 {
     class entity final {
     public:
-        entity(registry& owner);
-        entity(registry& owner, entity_id id);
+        entity(registry& owner) noexcept;
+        entity(registry& owner, entity_id id) noexcept;
 
         const registry& owner() const noexcept;
         entity_id id() const noexcept;
@@ -729,6 +702,61 @@ namespace std
 
 // -----------------------------------------------------------------------------
 //
+// const_entity
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    class const_entity final {
+    public:
+        const_entity(const entity& ent) noexcept;
+
+        const_entity(const registry& owner) noexcept;
+        const_entity(const registry& owner, entity_id id) noexcept;
+
+        const registry& owner() const noexcept;
+        entity_id id() const noexcept;
+
+        bool is_alive() const noexcept;
+
+        template < typename T >
+        bool exists_component() const noexcept;
+
+        template < typename T >
+        const T& get_component() const;
+
+        template < typename T >
+        const T* find_component() const noexcept;
+
+        template < typename... Ts >
+        std::tuple<const Ts&...> get_components() const;
+
+        template < typename... Ts >
+        std::tuple<const Ts*...> find_components() const noexcept;
+    private:
+        const registry* owner_;
+        entity_id id_{0u};
+    };
+
+    bool operator==(const const_entity& l, const const_entity& r) noexcept;
+    bool operator!=(const const_entity& l, const const_entity& r) noexcept;
+}
+
+namespace std
+{
+    template <>
+    struct hash<ecs_hpp::const_entity>
+        : std::unary_function<const ecs_hpp::const_entity&, std::size_t>
+    {
+        std::size_t operator()(const ecs_hpp::const_entity& ent) const noexcept {
+            return std::hash<ecs_hpp::entity_id>()(ent.id());
+        }
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
 // system
 //
 // -----------------------------------------------------------------------------
@@ -757,7 +785,7 @@ namespace ecs_hpp
 
         entity create_entity();
         bool destroy_entity(const entity& ent);
-        bool is_entity_alive(const entity& ent) const noexcept;
+        bool is_entity_alive(const const_entity& ent) const noexcept;
 
         template < typename T, typename... Args >
         bool assign_component(const entity& ent, Args&&... args);
@@ -766,29 +794,34 @@ namespace ecs_hpp
         bool remove_component(const entity& ent);
 
         template < typename T >
-        bool exists_component(const entity& ent) const noexcept;
+        bool exists_component(const const_entity& ent) const noexcept;
 
-        std::size_t remove_all_components(const entity& ent) const noexcept;
+        std::size_t remove_all_components(const entity& ent) noexcept;
 
         template < typename T >
         T& get_component(const entity& ent);
         template < typename T >
-        const T& get_component(const entity& ent) const;
+        const T& get_component(const const_entity& ent) const;
 
         template < typename T >
         T* find_component(const entity& ent) noexcept;
         template < typename T >
-        const T* find_component(const entity& ent) const noexcept;
+        const T* find_component(const const_entity& ent) const noexcept;
 
         template < typename... Ts >
         std::tuple<Ts&...> get_components(const entity& ent);
         template < typename... Ts >
-        std::tuple<const Ts&...> get_components(const entity& ent) const;
+        std::tuple<const Ts&...> get_components(const const_entity& ent) const;
 
         template < typename... Ts >
         std::tuple<Ts*...> find_components(const entity& ent) noexcept;
         template < typename... Ts >
-        std::tuple<const Ts*...> find_components(const entity& ent) const noexcept;
+        std::tuple<const Ts*...> find_components(const const_entity& ent) const noexcept;
+
+        template < typename F >
+        void for_each_entity(F&& f);
+        template < typename F >
+        void for_each_entity(F&& f) const;
 
         template < typename T, typename F >
         void for_each_component(F&& f);
@@ -812,13 +845,13 @@ namespace ecs_hpp
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
 
-        bool is_entity_alive_impl_(const entity& ent) const noexcept;
-        std::size_t remove_all_components_impl_(const entity& ent) const noexcept;
+        bool is_entity_alive_impl_(const const_entity& ent) const noexcept;
+        std::size_t remove_all_components_impl_(const entity& ent) noexcept;
 
         template < typename T >
         T* find_component_impl_(const entity& ent) noexcept;
         template < typename T >
-        const T* find_component_impl_(const entity& ent) const noexcept;
+        const T* find_component_impl_(const const_entity& ent) const noexcept;
 
         template < typename T, typename... Ts, typename F, std::size_t I, std::size_t... Is >
         void for_joined_components_impl_(F&& f, std::index_sequence<I, Is...> iseq);
@@ -843,7 +876,7 @@ namespace ecs_hpp
                  , typename Ss
                  , typename... Cs >
         void for_joined_components_impl_(
-            const entity& e,
+            const const_entity& e,
             const F& f,
             const Ss& ss,
             const Cs&... cs) const;
@@ -857,7 +890,7 @@ namespace ecs_hpp
 
         template < typename F, typename... Cs >
         void for_joined_components_impl_(
-            const entity& e,
+            const const_entity& e,
             const F& f,
             const std::tuple<>& ss,
             const Cs&... cs) const;
@@ -882,10 +915,10 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
-    inline entity::entity(registry& owner)
+    inline entity::entity(registry& owner) noexcept
     : owner_(&owner) {}
 
-    inline entity::entity(registry& owner, entity_id id)
+    inline entity::entity(registry& owner, entity_id id) noexcept
     : owner_(&owner)
     , id_(id) {}
 
@@ -978,6 +1011,72 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// const_entity impl
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    inline const_entity::const_entity(const entity& ent) noexcept
+    : owner_(&ent.owner())
+    , id_(ent.id()) {}
+
+    inline const_entity::const_entity(const registry& owner) noexcept
+    : owner_(&owner) {}
+
+    inline const_entity::const_entity(const registry& owner, entity_id id) noexcept
+    : owner_(&owner)
+    , id_(id) {}
+
+    inline const registry& const_entity::owner() const noexcept {
+        return *owner_;
+    }
+
+    inline entity_id const_entity::id() const noexcept {
+        return id_;
+    }
+
+    inline bool const_entity::is_alive() const noexcept {
+        return (*owner_).is_entity_alive(*this);
+    }
+
+    template < typename T >
+    bool const_entity::exists_component() const noexcept {
+        return (*owner_).exists_component<T>(*this);
+    }
+
+    template < typename T >
+    const T& const_entity::get_component() const {
+        return (*owner_).get_component<T>(*this);
+    }
+
+    template < typename T >
+    const T* const_entity::find_component() const noexcept {
+        return (*owner_).find_component<T>(*this);
+    }
+
+    template < typename... Ts >
+    std::tuple<const Ts&...> const_entity::get_components() const {
+        return (*owner_).get_components<Ts...>(*this);
+    }
+
+    template < typename... Ts >
+    std::tuple<const Ts*...> const_entity::find_components() const noexcept {
+        return (*owner_).find_components<Ts...>(*this);
+    }
+
+    inline bool operator==(const const_entity& l, const const_entity& r) noexcept {
+        return &l.owner() == &r.owner()
+            && l.id() == r.id();
+    }
+
+    inline bool operator!=(const const_entity& l, const const_entity& r) noexcept {
+        return !(l == r);
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // registry impl
 //
 // -----------------------------------------------------------------------------
@@ -1011,7 +1110,7 @@ namespace ecs_hpp
         return false;
     }
 
-    inline bool registry::is_entity_alive(const entity& ent) const noexcept {
+    inline bool registry::is_entity_alive(const const_entity& ent) const noexcept {
         return is_entity_alive_impl_(ent);
     }
 
@@ -1038,7 +1137,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool registry::exists_component(const entity& ent) const noexcept {
+    bool registry::exists_component(const const_entity& ent) const noexcept {
         if ( !is_entity_alive_impl_(ent) ) {
             return false;
         }
@@ -1048,7 +1147,7 @@ namespace ecs_hpp
             : false;
     }
 
-    inline std::size_t registry::remove_all_components(const entity& ent) const noexcept {
+    inline std::size_t registry::remove_all_components(const entity& ent) noexcept {
         return remove_all_components_impl_(ent);
     }
 
@@ -1062,7 +1161,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    const T& registry::get_component(const entity& ent) const {
+    const T& registry::get_component(const const_entity& ent) const {
         const T* component = find_component_impl_<T>(ent);
         if ( component ) {
             return *component;
@@ -1076,7 +1175,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    const T* registry::find_component(const entity& ent) const noexcept {
+    const T* registry::find_component(const const_entity& ent) const noexcept {
         return find_component_impl_<T>(ent);
     }
 
@@ -1086,7 +1185,7 @@ namespace ecs_hpp
     }
 
     template < typename... Ts >
-    std::tuple<const Ts&...> registry::get_components(const entity& ent) const {
+    std::tuple<const Ts&...> registry::get_components(const const_entity& ent) const {
         return std::make_tuple(std::cref(get_component<Ts>(ent))...);
     }
 
@@ -1096,8 +1195,22 @@ namespace ecs_hpp
     }
 
     template < typename... Ts >
-    std::tuple<const Ts*...> registry::find_components(const entity& ent) const noexcept {
+    std::tuple<const Ts*...> registry::find_components(const const_entity& ent) const noexcept {
         return std::make_tuple(find_component<Ts>(ent)...);
+    }
+
+    template < typename F >
+    void registry::for_each_entity(F&& f) {
+        for ( const auto id : entity_ids_ ) {
+            f(entity(*this, id));
+        }
+    }
+
+    template < typename F >
+    void registry::for_each_entity(F&& f) const {
+        for ( const auto id : entity_ids_ ) {
+            f(const_entity(*this, id));
+        }
     }
 
     template < typename T, typename F >
@@ -1146,8 +1259,9 @@ namespace ecs_hpp
     detail::component_storage<T>* registry::find_storage_() noexcept {
         const auto family = detail::type_family<T>::id();
         using raw_storage_ptr = detail::component_storage<T>*;
-        return storages_.has(family)
-            ? static_cast<raw_storage_ptr>(storages_.get(family).get())
+        const storage_uptr* storage_uptr_ptr = storages_.find(family);
+        return storage_uptr_ptr && *storage_uptr_ptr
+            ? static_cast<raw_storage_ptr>(storage_uptr_ptr->get())
             : nullptr;
     }
 
@@ -1155,8 +1269,9 @@ namespace ecs_hpp
     const detail::component_storage<T>* registry::find_storage_() const noexcept {
         const auto family = detail::type_family<T>::id();
         using raw_storage_ptr = const detail::component_storage<T>*;
-        return storages_.has(family)
-            ? static_cast<raw_storage_ptr>(storages_.get(family).get())
+        const storage_uptr* storage_uptr_ptr = storages_.find(family);
+        return storage_uptr_ptr && *storage_uptr_ptr
+            ? static_cast<raw_storage_ptr>(storage_uptr_ptr->get())
             : nullptr;
     }
 
@@ -1174,11 +1289,11 @@ namespace ecs_hpp
             storages_.get(family).get());
     }
 
-    inline bool registry::is_entity_alive_impl_(const entity& ent) const noexcept {
+    inline bool registry::is_entity_alive_impl_(const const_entity& ent) const noexcept {
         return entity_ids_.has(ent.id());
     }
 
-    inline std::size_t registry::remove_all_components_impl_(const entity& ent) const noexcept {
+    inline std::size_t registry::remove_all_components_impl_(const entity& ent) noexcept {
         if ( !is_entity_alive_impl_(ent) ) {
             return 0u;
         }
@@ -1200,7 +1315,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    const T* registry::find_component_impl_(const entity& ent) const noexcept {
+    const T* registry::find_component_impl_(const const_entity& ent) const noexcept {
         const detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->find(ent.id())
@@ -1237,7 +1352,7 @@ namespace ecs_hpp
         (void)iseq;
         const auto ss = std::make_tuple(find_storage_<Ts>()...);
         if ( !detail::tuple_contains(ss, nullptr) ) {
-            for_each_component<T>([this, &f, &ss](const entity& e, const T& t) {
+            for_each_component<T>([this, &f, &ss](const const_entity& e, const T& t) {
                 detail::as_const(*this).for_joined_components_impl_<Ts...>(e, f, ss, t);
             });
         }
@@ -1271,7 +1386,7 @@ namespace ecs_hpp
              , typename Ss
              , typename... Cs >
     void registry::for_joined_components_impl_(
-        const entity& e,
+        const const_entity& e,
         const F& f,
         const Ss& ss,
         const Cs&... cs) const
@@ -1300,7 +1415,7 @@ namespace ecs_hpp
 
     template < typename F, typename... Cs >
     void registry::for_joined_components_impl_(
-        const entity& e,
+        const const_entity& e,
         const F& f,
         const std::tuple<>& ss,
         const Cs&... cs) const
