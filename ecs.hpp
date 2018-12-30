@@ -75,6 +75,14 @@ namespace ecs_hpp
         }
 
         //
+        // hash_combine
+        //
+
+        constexpr std::size_t hash_combine(std::size_t l, std::size_t r) noexcept {
+            return l ^ (r + 0x9e3779b9 + (l << 6) + (l >> 2));
+        }
+
+        //
         // tuple_tail
         //
 
@@ -695,7 +703,9 @@ namespace std
         : std::unary_function<const ecs_hpp::entity&, std::size_t>
     {
         std::size_t operator()(const ecs_hpp::entity& ent) const noexcept {
-            return std::hash<ecs_hpp::entity_id>()(ent.id());
+            return ecs_hpp::detail::hash_combine(
+                std::hash<const ecs_hpp::registry*>()(&ent.owner()),
+                std::hash<ecs_hpp::entity_id>()(ent.id()));
         }
     };
 }
@@ -750,7 +760,9 @@ namespace std
         : std::unary_function<const ecs_hpp::const_entity&, std::size_t>
     {
         std::size_t operator()(const ecs_hpp::const_entity& ent) const noexcept {
-            return std::hash<ecs_hpp::entity_id>()(ent.id());
+            return ecs_hpp::detail::hash_combine(
+                std::hash<const ecs_hpp::registry*>()(&ent.owner()),
+                std::hash<ecs_hpp::entity_id>()(ent.id()));
         }
     };
 }
