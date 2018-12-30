@@ -292,8 +292,8 @@ TEST_CASE("registry") {
             ecs::entity e2{w};
 
             REQUIRE(e1 == e2);
-            REQUIRE_FALSE(w.is_entity_alive(e1));
-            REQUIRE_FALSE(w.is_entity_alive(e2));
+            REQUIRE_FALSE(w.alive_entity(e1));
+            REQUIRE_FALSE(w.alive_entity(e2));
 
             REQUIRE_FALSE(w.destroy_entity(e1));
             REQUIRE_FALSE(w.destroy_entity(e2));
@@ -305,16 +305,16 @@ TEST_CASE("registry") {
             auto e2 = w.create_entity();
 
             REQUIRE(e1 != e2);
-            REQUIRE(w.is_entity_alive(e1));
-            REQUIRE(w.is_entity_alive(e2));
+            REQUIRE(w.alive_entity(e1));
+            REQUIRE(w.alive_entity(e2));
 
             REQUIRE(w.destroy_entity(e1));
-            REQUIRE_FALSE(w.is_entity_alive(e1));
-            REQUIRE(w.is_entity_alive(e2));
+            REQUIRE_FALSE(w.alive_entity(e1));
+            REQUIRE(w.alive_entity(e2));
 
             REQUIRE(w.destroy_entity(e2));
-            REQUIRE_FALSE(w.is_entity_alive(e1));
-            REQUIRE_FALSE(w.is_entity_alive(e2));
+            REQUIRE_FALSE(w.alive_entity(e1));
+            REQUIRE_FALSE(w.alive_entity(e2));
 
             REQUIRE_FALSE(w.destroy_entity(e1));
             REQUIRE_FALSE(w.destroy_entity(e2));
@@ -430,6 +430,19 @@ TEST_CASE("registry") {
             REQUIRE(e1.destroy());
             REQUIRE_FALSE(e1.assign_component<position_c>());
             REQUIRE_FALSE(w.exists_component<position_c>(e1));
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            REQUIRE(w.assign_component<position_c>(e1));
+
+            REQUIRE(w.assign_component<position_c>(e2));
+            REQUIRE(w.assign_component<velocity_c>(e2));
+
+            REQUIRE(e1.destroy());
         }
     }
     SECTION("component_accessing") {
@@ -759,7 +772,7 @@ TEST_CASE("example") {
             owner.for_joined_components<
                 position_component,
                 velocity_component
-            >([](const ecs_hpp::entity& e, position_component& p, const velocity_component& v) {
+            >([](const ecs_hpp::entity&, position_component& p, const velocity_component& v) {
                 p.x += v.dx;
                 p.y += v.dy;
             });
@@ -774,7 +787,7 @@ TEST_CASE("example") {
         void process(ecs_hpp::registry& owner) override {
             owner.for_each_component<
                 velocity_component
-            >([this](const ecs_hpp::entity& e, velocity_component& v) {
+            >([this](const ecs_hpp::entity&, velocity_component& v) {
                 v.dx += gravity_;
                 v.dy += gravity_;
             });

@@ -562,18 +562,18 @@ namespace ecs_hpp
         public:
             virtual ~component_storage_base() = default;
             virtual bool remove(entity_id id) noexcept = 0;
-            virtual bool exists(entity_id id) const noexcept = 0;
         };
 
         template < typename T >
-        class component_storage : public component_storage_base {
+        class component_storage final : public component_storage_base {
         public:
             component_storage(registry& owner);
 
             template < typename... Args >
             void assign(entity_id id, Args&&... args);
+            bool exists(entity_id id) const noexcept;
             bool remove(entity_id id) noexcept override;
-            bool exists(entity_id id) const noexcept override;
+
             T* find(entity_id id) noexcept;
             const T* find(entity_id id) const noexcept;
 
@@ -599,13 +599,13 @@ namespace ecs_hpp
         }
 
         template < typename T >
-        bool component_storage<T>::remove(entity_id id) noexcept {
-            return components_.unordered_erase(id);
+        bool component_storage<T>::exists(entity_id id) const noexcept {
+            return components_.has(id);
         }
 
         template < typename T >
-        bool component_storage<T>::exists(entity_id id) const noexcept {
-            return components_.has(id);
+        bool component_storage<T>::remove(entity_id id) noexcept {
+            return components_.unordered_erase(id);
         }
 
         template < typename T >
@@ -649,11 +649,13 @@ namespace ecs_hpp
         entity(registry& owner) noexcept;
         entity(registry& owner, entity_id id) noexcept;
 
+        registry& owner() noexcept;
         const registry& owner() const noexcept;
+
         entity_id id() const noexcept;
 
         bool destroy();
-        bool is_alive() const noexcept;
+        bool alive() const noexcept;
 
         template < typename T, typename... Args >
         bool assign_component(Args&&... args);
@@ -728,7 +730,7 @@ namespace ecs_hpp
         const registry& owner() const noexcept;
         entity_id id() const noexcept;
 
-        bool is_alive() const noexcept;
+        bool alive() const noexcept;
 
         template < typename T >
         bool exists_component() const noexcept;
@@ -797,7 +799,7 @@ namespace ecs_hpp
 
         entity create_entity();
         bool destroy_entity(const entity& ent);
-        bool is_entity_alive(const const_entity& ent) const noexcept;
+        bool alive_entity(const const_entity& ent) const noexcept;
 
         template < typename T, typename... Args >
         bool assign_component(const entity& ent, Args&&... args);
@@ -856,9 +858,6 @@ namespace ecs_hpp
 
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
-
-        bool is_entity_alive_impl_(const const_entity& ent) const noexcept;
-        std::size_t remove_all_components_impl_(const entity& ent) noexcept;
 
         template < typename T >
         T* find_component_impl_(const entity& ent) noexcept;
@@ -934,6 +933,10 @@ namespace ecs_hpp
     : owner_(&owner)
     , id_(id) {}
 
+    inline registry& entity::owner() noexcept {
+        return *owner_;
+    }
+
     inline const registry& entity::owner() const noexcept {
         return *owner_;
     }
@@ -946,8 +949,8 @@ namespace ecs_hpp
         return (*owner_).destroy_entity(*this);
     }
 
-    inline bool entity::is_alive() const noexcept {
-        return detail::as_const(*owner_).is_entity_alive(*this);
+    inline bool entity::alive() const noexcept {
+        return detail::as_const(*owner_).alive_entity(*this);
     }
 
     template < typename T, typename... Args >
@@ -1048,8 +1051,8 @@ namespace ecs_hpp
         return id_;
     }
 
-    inline bool const_entity::is_alive() const noexcept {
-        return (*owner_).is_entity_alive(*this);
+    inline bool const_entity::alive() const noexcept {
+        return (*owner_).alive_entity(*this);
     }
 
     template < typename T >
@@ -1114,7 +1117,7 @@ namespace ecs_hpp
     }
 
     inline bool registry::destroy_entity(const entity& ent) {
-        remove_all_components_impl_(ent);
+        remove_all_components(ent);
         if ( entity_ids_.unordered_erase(ent.id()) ) {
             free_entity_ids_.push_back(ent.id());
             return true;
@@ -1122,13 +1125,13 @@ namespace ecs_hpp
         return false;
     }
 
-    inline bool registry::is_entity_alive(const const_entity& ent) const noexcept {
-        return is_entity_alive_impl_(ent);
+    inline bool registry::alive_entity(const const_entity& ent) const noexcept {
+        return entity_ids_.has(ent.id());
     }
 
     template < typename T, typename... Args >
     bool registry::assign_component(const entity& ent, Args&&... args) {
-        if ( !is_entity_alive_impl_(ent) ) {
+        if ( !alive_entity(ent) ) {
             return false;
         }
         get_or_create_storage_<T>().assign(
@@ -1139,10 +1142,10 @@ namespace ecs_hpp
 
     template < typename T >
     bool registry::remove_component(const entity& ent) {
-        if ( !is_entity_alive_impl_(ent) ) {
+        if ( !alive_entity(ent) ) {
             return false;
         }
-        const detail::component_storage<T>* storage = find_storage_<T>();
+        detail::component_storage<T>* storage = find_storage_<T>();
         return storage
             ? storage->remove(ent.id())
             : false;
@@ -1150,7 +1153,7 @@ namespace ecs_hpp
 
     template < typename T >
     bool registry::exists_component(const const_entity& ent) const noexcept {
-        if ( !is_entity_alive_impl_(ent) ) {
+        if ( !alive_entity(ent) ) {
             return false;
         }
         const detail::component_storage<T>* storage = find_storage_<T>();
@@ -1160,7 +1163,16 @@ namespace ecs_hpp
     }
 
     inline std::size_t registry::remove_all_components(const entity& ent) noexcept {
-        return remove_all_components_impl_(ent);
+        if ( !alive_entity(ent) ) {
+            return 0u;
+        }
+        std::size_t removed_components = 0u;
+        for ( const auto family_id : storages_ ) {
+            if ( storages_.get(family_id)->remove(ent.id()) ) {
+                ++removed_components;
+            }
+        }
+        return removed_components;
     }
 
     template < typename T >
@@ -1299,23 +1311,6 @@ namespace ecs_hpp
             std::make_unique<detail::component_storage<T>>(*this));
         return *static_cast<detail::component_storage<T>*>(
             storages_.get(family).get());
-    }
-
-    inline bool registry::is_entity_alive_impl_(const const_entity& ent) const noexcept {
-        return entity_ids_.has(ent.id());
-    }
-
-    inline std::size_t registry::remove_all_components_impl_(const entity& ent) noexcept {
-        if ( !is_entity_alive_impl_(ent) ) {
-            return 0u;
-        }
-        std::size_t removed_components = 0u;
-        for ( const auto id : storages_ ) {
-            if ( storages_.get(id)->remove(ent.id()) ) {
-                ++removed_components;
-            }
-        }
-        return removed_components;
     }
 
     template < typename T >
