@@ -718,6 +718,8 @@ namespace ecs_hpp
         entity_id id_{0u};
     };
 
+    bool operator<(const entity& l, const entity& r) noexcept;
+
     bool operator==(const entity& l, const entity& r) noexcept;
     bool operator==(const entity& l, const const_entity& r) noexcept;
 
@@ -781,6 +783,8 @@ namespace ecs_hpp
         entity_id id_{0u};
     };
 
+    bool operator<(const const_entity& l, const const_entity& r) noexcept;
+
     bool operator==(const const_entity& l, const entity& r) noexcept;
     bool operator==(const const_entity& l, const const_entity& r) noexcept;
 
@@ -837,6 +841,9 @@ namespace ecs_hpp
     };
 
     template < typename T >
+    bool operator<(const component<T>& l, const component<T>& r) noexcept;
+
+    template < typename T >
     bool operator==(const component<T>& l, const component<T>& r) noexcept;
     template < typename T >
     bool operator==(const component<T>& l, const const_component<T>& r) noexcept;
@@ -885,6 +892,9 @@ namespace ecs_hpp
     private:
         const_entity owner_;
     };
+
+    template < typename T >
+    bool operator<(const const_component<T>& l, const const_component<T>& r) noexcept;
 
     template < typename T >
     bool operator==(const const_component<T>& l, const component<T>& r) noexcept;
@@ -1218,6 +1228,11 @@ namespace ecs_hpp
         return detail::as_const(*owner_).find_components<Ts...>(id_);
     }
 
+    inline bool operator<(const entity& l, const entity& r) noexcept {
+        return (&l.owner() < &r.owner())
+            || (&l.owner() == &r.owner() && l.id() < r.id());
+    }
+
     inline bool operator==(const entity& l, const entity& r) noexcept {
         return &l.owner() == &r.owner()
             && l.id() == r.id();
@@ -1291,6 +1306,11 @@ namespace ecs_hpp
     template < typename... Ts >
     std::tuple<const Ts*...> const_entity::find_components() const noexcept {
         return (*owner_).find_components<Ts...>(id_);
+    }
+
+    inline bool operator<(const const_entity& l, const const_entity& r) noexcept {
+        return (&l.owner() < &r.owner())
+            || (&l.owner() == &r.owner() && l.id() < r.id());
     }
 
     inline bool operator==(const const_entity& l, const entity& r) noexcept {
@@ -1372,6 +1392,11 @@ namespace ecs_hpp
     }
 
     template < typename T >
+    bool operator<(const component<T>& l, const component<T>& r) noexcept {
+        return l.owner() < r.owner();
+    }
+
+    template < typename T >
     bool operator==(const component<T>& l, const component<T>& r) noexcept {
         return l.owner() == r.owner();
     }
@@ -1426,6 +1451,11 @@ namespace ecs_hpp
     template < typename T >
     const T* const_component<T>::find() const noexcept {
         return detail::as_const(owner_).template find_component<T>();
+    }
+
+    template < typename T >
+    bool operator<(const const_component<T>& l, const const_component<T>& r) noexcept {
+        return l.owner() < r.owner();
     }
 
     template < typename T >
