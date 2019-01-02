@@ -372,13 +372,21 @@ TEST_CASE("registry") {
             {
                 REQUIRE_FALSE(w.exists_component<position_c>(e1));
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
+                REQUIRE_FALSE(w.component_count<position_c>());
+                REQUIRE_FALSE(w.entity_component_count<position_c>(e1));
 
                 REQUIRE(w.assign_component<position_c>(e1));
 
                 REQUIRE(w.exists_component<position_c>(e1));
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
+                REQUIRE(w.component_count<position_c>() == 1u);
+                REQUIRE(w.component_count<velocity_c>() == 0u);
+                REQUIRE(w.entity_component_count<position_c>(e1) == 1u);
 
                 REQUIRE(w.assign_component<velocity_c>(e1));
+                REQUIRE(w.component_count<position_c>() == 1u);
+                REQUIRE(w.component_count<velocity_c>() == 1u);
+                REQUIRE(w.entity_component_count<position_c>(e1) == 2u);
 
                 REQUIRE(w.exists_component<position_c>(e1));
                 REQUIRE(w.exists_component<velocity_c>(e1));
@@ -387,6 +395,9 @@ TEST_CASE("registry") {
 
                 REQUIRE_FALSE(w.exists_component<position_c>(e1));
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
+                REQUIRE_FALSE(w.component_count<position_c>());
+                REQUIRE_FALSE(w.component_count<velocity_c>());
+                REQUIRE_FALSE(w.entity_component_count<position_c>(e1));
             }
 
             {
@@ -402,6 +413,11 @@ TEST_CASE("registry") {
 
                 REQUIRE(e1.exists_component<position_c>());
                 REQUIRE(e1.exists_component<velocity_c>());
+
+                REQUIRE(e1.destroy());
+
+                REQUIRE_FALSE(e1.exists_component<position_c>());
+                REQUIRE_FALSE(e1.exists_component<velocity_c>());
             }
         }
         {
@@ -611,6 +627,17 @@ TEST_CASE("registry") {
             {
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
+                w.for_each_component<position_c>([&acc1, &acc2](ecs::entity_id id, position_c& p){
+                    acc1 += id;
+                    acc2 += p.x;
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+                REQUIRE(acc2 == 6);
+            }
+
+            {
+                ecs::entity_id acc1 = 0;
+                int acc2 = 0;
                 w.for_each_component<position_c>([&acc1, &acc2](ecs::entity e, position_c& p){
                     acc1 += e.id();
                     acc2 += p.x;
@@ -682,6 +709,19 @@ TEST_CASE("registry") {
                 ecs::entity_id acc1 = 0;
                 int acc2 = 0;
                 w.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
+                    ecs::entity_id id, const position_c& p, const velocity_c& v)
+                {
+                    acc1 += id;
+                    acc2 += p.x + v.x;
+                });
+                REQUIRE(acc1 == e1.id() + e2.id());
+                REQUIRE(acc2 == 16);
+            }
+
+            {
+                ecs::entity_id acc1 = 0;
+                int acc2 = 0;
+                w.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
                     ecs::entity e, const position_c& p, const velocity_c& v)
                 {
                     acc1 += e.id();
@@ -693,16 +733,30 @@ TEST_CASE("registry") {
 
             {
                 const ecs::registry& ww = w;
-                ecs::entity_id acc1 = 0;
-                int acc2 = 0;
-                ww.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
-                    ecs::const_entity e, const position_c& p, const velocity_c& v)
                 {
-                    acc1 += e.id();
-                    acc2 += p.x + v.x;
-                });
-                REQUIRE(acc1 == e1.id() + e2.id());
-                REQUIRE(acc2 == 16);
+                    ecs::entity_id acc1 = 0;
+                    int acc2 = 0;
+                    ww.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
+                        ecs::entity_id id, const position_c& p, const velocity_c& v)
+                    {
+                        acc1 += id;
+                        acc2 += p.x + v.x;
+                    });
+                    REQUIRE(acc1 == e1.id() + e2.id());
+                    REQUIRE(acc2 == 16);
+                }
+                {
+                    ecs::entity_id acc1 = 0;
+                    int acc2 = 0;
+                    ww.for_joined_components<position_c, velocity_c>([&acc1, &acc2](
+                        ecs::const_entity e, const position_c& p, const velocity_c& v)
+                    {
+                        acc1 += e.id();
+                        acc2 += p.x + v.x;
+                    });
+                    REQUIRE(acc1 == e1.id() + e2.id());
+                    REQUIRE(acc2 == 16);
+                }
             }
         }
         {
@@ -753,15 +807,15 @@ TEST_CASE("registry") {
 
 TEST_CASE("example") {
     struct position_component {
-        float x{0};
-        float y{0};
+        float x;
+        float y;
         position_component(float nx, float ny)
         : x(nx), y(ny) {}
     };
 
     struct velocity_component {
-        float dx{0};
-        float dy{0};
+        float dx;
+        float dy;
         velocity_component(float ndx, float ndy)
         : dx(ndx), dy(ndy) {}
     };

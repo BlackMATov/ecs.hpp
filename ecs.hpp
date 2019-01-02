@@ -197,7 +197,7 @@ namespace ecs_hpp
         };
 
         template < typename T >
-        class type_family : public type_family_base<> {
+        class type_family final : public type_family_base<> {
         public:
             static family_id id() noexcept {
                 static family_id self_id = ++last_id_;
@@ -234,7 +234,7 @@ namespace ecs_hpp
         struct sparse_unsigned_indexer<T, false> {};
 
         template < typename T >
-        struct sparse_indexer
+        struct sparse_indexer final
         : public sparse_unsigned_indexer<T> {};
     }
 }
@@ -474,7 +474,9 @@ namespace ecs_hpp
             std::enable_if_t<
                 std::is_nothrow_move_assignable<K>::value,
                 bool>
-            unordered_erase(const K& k) {
+            unordered_erase(const K& k)
+                noexcept(std::is_nothrow_move_assignable<T>::value)
+            {
                 if ( !keys_.has(k) ) {
                     return false;
                 }
@@ -540,7 +542,7 @@ namespace ecs_hpp
 {
     namespace detail
     {
-        struct entity_id_indexer {
+        struct entity_id_indexer final {
             std::size_t operator()(entity_id id) const noexcept {
                 return entity_id_index(id);
             }
@@ -562,6 +564,7 @@ namespace ecs_hpp
         public:
             virtual ~component_storage_base() = default;
             virtual bool remove(entity_id id) noexcept = 0;
+            virtual bool has(entity_id id) const noexcept = 0;
         };
 
         template < typename T >
@@ -576,6 +579,9 @@ namespace ecs_hpp
 
             T* find(entity_id id) noexcept;
             const T* find(entity_id id) const noexcept;
+
+            std::size_t count() const noexcept;
+            bool has(entity_id id) const noexcept override;
 
             template < typename F >
             void for_each_component(F&& f) noexcept;
@@ -619,10 +625,20 @@ namespace ecs_hpp
         }
 
         template < typename T >
+        std::size_t component_storage<T>::count() const noexcept {
+            return components_.size();
+        }
+
+        template < typename T >
+        bool component_storage<T>::has(entity_id id) const noexcept {
+            return components_.has(id);
+        }
+
+        template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) noexcept {
             for ( const auto id : components_ ) {
-                f(entity(owner_, id), components_.get(id));
+                f(id, components_.get(id));
             }
         }
 
@@ -630,7 +646,7 @@ namespace ecs_hpp
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) const noexcept {
             for ( const auto id : components_ ) {
-                f(const_entity(owner_, id), components_.get(id));
+                f(id, components_.get(id));
             }
         }
     }
@@ -690,7 +706,7 @@ namespace ecs_hpp
         template < typename... Ts >
         std::tuple<const Ts*...> find_components() const noexcept;
     private:
-        registry* owner_;
+        registry* owner_{nullptr};
         entity_id id_{0u};
     };
 
@@ -701,7 +717,7 @@ namespace ecs_hpp
 namespace std
 {
     template <>
-    struct hash<ecs_hpp::entity>
+    struct hash<ecs_hpp::entity> final
         : std::unary_function<const ecs_hpp::entity&, std::size_t>
     {
         std::size_t operator()(const ecs_hpp::entity& ent) const noexcept {
@@ -747,7 +763,7 @@ namespace ecs_hpp
         template < typename... Ts >
         std::tuple<const Ts*...> find_components() const noexcept;
     private:
-        const registry* owner_;
+        const registry* owner_{nullptr};
         entity_id id_{0u};
     };
 
@@ -758,7 +774,7 @@ namespace ecs_hpp
 namespace std
 {
     template <>
-    struct hash<ecs_hpp::const_entity>
+    struct hash<ecs_hpp::const_entity> final
         : std::unary_function<const ecs_hpp::const_entity&, std::size_t>
     {
         std::size_t operator()(const ecs_hpp::const_entity& ent) const noexcept {
@@ -793,44 +809,92 @@ namespace ecs_hpp
 namespace ecs_hpp
 {
     class registry final {
+    private:
+        class uentity {
+        public:
+            uentity(registry& owner, entity_id id) noexcept;
+
+            uentity(entity_id ent) noexcept;
+            uentity(entity ent) noexcept;
+
+            operator entity_id() const noexcept;
+            operator entity() const noexcept;
+            operator const_entity() const noexcept;
+
+            entity_id id() const noexcept;
+            registry* owner() noexcept;
+            const registry* owner() const noexcept;
+
+            bool check_owner(const registry* owner) const noexcept;
+        private:
+            entity_id id_{0u};
+            registry* owner_{nullptr};
+        };
+
+        class const_uentity {
+        public:
+            const_uentity(const registry& owner, entity_id id) noexcept;
+
+            const_uentity(entity_id ent) noexcept;
+            const_uentity(entity ent) noexcept;
+            const_uentity(const_entity ent) noexcept;
+            const_uentity(const uentity& ent) noexcept;
+
+            operator entity_id() const noexcept;
+            operator const_entity() const noexcept;
+
+            entity_id id() const noexcept;
+            const registry* owner() const noexcept;
+
+            bool check_owner(const registry* owner) const noexcept;
+        private:
+            entity_id id_{0u};
+            const registry* owner_{nullptr};
+        };
     public:
         registry() = default;
         ~registry() noexcept = default;
 
         entity create_entity();
-        bool destroy_entity(const entity& ent);
-        bool alive_entity(const const_entity& ent) const noexcept;
+
+        bool destroy_entity(const uentity& ent);
+        bool alive_entity(const const_uentity& ent) const noexcept;
 
         template < typename T, typename... Args >
-        bool assign_component(const entity& ent, Args&&... args);
+        bool assign_component(const uentity& ent, Args&&... args);
 
         template < typename T >
-        bool remove_component(const entity& ent);
+        bool remove_component(const uentity& ent);
 
         template < typename T >
-        bool exists_component(const const_entity& ent) const noexcept;
+        bool exists_component(const const_uentity& ent) const noexcept;
 
-        std::size_t remove_all_components(const entity& ent) noexcept;
-
-        template < typename T >
-        T& get_component(const entity& ent);
-        template < typename T >
-        const T& get_component(const const_entity& ent) const;
+        std::size_t remove_all_components(const uentity& ent) noexcept;
 
         template < typename T >
-        T* find_component(const entity& ent) noexcept;
+        T& get_component(const uentity& ent);
         template < typename T >
-        const T* find_component(const const_entity& ent) const noexcept;
+        const T& get_component(const const_uentity& ent) const;
+
+        template < typename T >
+        T* find_component(const uentity& ent) noexcept;
+        template < typename T >
+        const T* find_component(const const_uentity& ent) const noexcept;
 
         template < typename... Ts >
-        std::tuple<Ts&...> get_components(const entity& ent);
+        std::tuple<Ts&...> get_components(const uentity& ent);
         template < typename... Ts >
-        std::tuple<const Ts&...> get_components(const const_entity& ent) const;
+        std::tuple<const Ts&...> get_components(const const_uentity& ent) const;
 
         template < typename... Ts >
-        std::tuple<Ts*...> find_components(const entity& ent) noexcept;
+        std::tuple<Ts*...> find_components(const uentity& ent) noexcept;
         template < typename... Ts >
-        std::tuple<const Ts*...> find_components(const const_entity& ent) const noexcept;
+        std::tuple<const Ts*...> find_components(const const_uentity& ent) const noexcept;
+
+        template < typename T >
+        std::size_t component_count() const noexcept;
+        template < typename T >
+        std::size_t entity_component_count(const const_uentity& ent) const noexcept;
 
         template < typename F >
         void for_each_entity(F&& f);
@@ -853,22 +917,30 @@ namespace ecs_hpp
     private:
         template < typename T >
         detail::component_storage<T>* find_storage_() noexcept;
+
         template < typename T >
         const detail::component_storage<T>* find_storage_() const noexcept;
 
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
 
-        template < typename T >
-        T* find_component_impl_(const entity& ent) noexcept;
-        template < typename T >
-        const T* find_component_impl_(const const_entity& ent) const noexcept;
+        template < typename T
+                 , typename... Ts
+                 , typename F
+                 , std::size_t I
+                 , std::size_t... Is >
+        void for_joined_components_impl_(
+            F&& f,
+            std::index_sequence<I, Is...> iseq);
 
-        template < typename T, typename... Ts, typename F, std::size_t I, std::size_t... Is >
-        void for_joined_components_impl_(F&& f, std::index_sequence<I, Is...> iseq);
-
-        template < typename T, typename... Ts, typename F, std::size_t I, std::size_t... Is >
-        void for_joined_components_impl_(F&& f, std::index_sequence<I, Is...> iseq) const;
+        template < typename T
+                 , typename... Ts
+                 , typename F
+                 , std::size_t I
+                 , std::size_t... Is >
+        void for_joined_components_impl_(
+            F&& f,
+            std::index_sequence<I, Is...> iseq) const;
 
         template < typename T
                  , typename... Ts
@@ -876,7 +948,7 @@ namespace ecs_hpp
                  , typename Ss
                  , typename... Cs >
         void for_joined_components_impl_(
-            const entity& e,
+            const uentity& e,
             const F& f,
             const Ss& ss,
             Cs&... cs);
@@ -887,21 +959,21 @@ namespace ecs_hpp
                  , typename Ss
                  , typename... Cs >
         void for_joined_components_impl_(
-            const const_entity& e,
+            const const_uentity& e,
             const F& f,
             const Ss& ss,
             const Cs&... cs) const;
 
         template < typename F, typename... Cs >
         void for_joined_components_impl_(
-            const entity& e,
+            const uentity& e,
             const F& f,
             const std::tuple<>& ss,
             Cs&... cs);
 
         template < typename F, typename... Cs >
         void for_joined_components_impl_(
-            const const_entity& e,
+            const const_uentity& e,
             const F& f,
             const std::tuple<>& ss,
             const Cs&... cs) const;
@@ -946,72 +1018,72 @@ namespace ecs_hpp
     }
 
     inline bool entity::destroy() {
-        return (*owner_).destroy_entity(*this);
+        return (*owner_).destroy_entity(id_);
     }
 
     inline bool entity::alive() const noexcept {
-        return detail::as_const(*owner_).alive_entity(*this);
+        return detail::as_const(*owner_).alive_entity(id_);
     }
 
     template < typename T, typename... Args >
     bool entity::assign_component(Args&&... args) {
         return (*owner_).assign_component<T>(
-            *this,
+            id_,
             std::forward<Args>(args)...);
     }
 
     template < typename T >
     bool entity::remove_component() {
-        return (*owner_).remove_component<T>(*this);
+        return (*owner_).remove_component<T>(id_);
     }
 
     template < typename T >
     bool entity::exists_component() const noexcept {
-        return detail::as_const(*owner_).exists_component<T>(*this);
+        return detail::as_const(*owner_).exists_component<T>(id_);
     }
 
     inline std::size_t entity::remove_all_components() noexcept {
-        return (*owner_).remove_all_components(*this);
+        return (*owner_).remove_all_components(id_);
     }
 
     template < typename T >
     T& entity::get_component() {
-        return (*owner_).get_component<T>(*this);
+        return (*owner_).get_component<T>(id_);
     }
 
     template < typename T >
     const T& entity::get_component() const {
-        return detail::as_const(*owner_).get_component<T>(*this);
+        return detail::as_const(*owner_).get_component<T>(id_);
     }
 
     template < typename T >
     T* entity::find_component() noexcept {
-        return (*owner_).find_component<T>(*this);
+        return (*owner_).find_component<T>(id_);
     }
 
     template < typename T >
     const T* entity::find_component() const noexcept {
-        return detail::as_const(*owner_).find_component<T>(*this);
+        return detail::as_const(*owner_).find_component<T>(id_);
     }
 
     template < typename... Ts >
     std::tuple<Ts&...> entity::get_components() {
-        return (*owner_).get_components<Ts...>(*this);
+        return (*owner_).get_components<Ts...>(id_);
     }
 
     template < typename... Ts >
     std::tuple<const Ts&...> entity::get_components() const {
-        return detail::as_const(*owner_).get_components<Ts...>(*this);
+        return detail::as_const(*owner_).get_components<Ts...>(id_);
     }
 
     template < typename... Ts >
     std::tuple<Ts*...> entity::find_components() noexcept {
-        return (*owner_).find_components<Ts...>(*this);
+        return (*owner_).find_components<Ts...>(id_);
     }
 
     template < typename... Ts >
     std::tuple<const Ts*...> entity::find_components() const noexcept {
-        return detail::as_const(*owner_).find_components<Ts...>(*this);
+        return detail::as_const(*owner_).find_components<Ts...>(id_);
     }
 
     inline bool operator==(const entity& l, const entity& r) noexcept {
@@ -1052,32 +1124,32 @@ namespace ecs_hpp
     }
 
     inline bool const_entity::alive() const noexcept {
-        return (*owner_).alive_entity(*this);
+        return (*owner_).alive_entity(id_);
     }
 
     template < typename T >
     bool const_entity::exists_component() const noexcept {
-        return (*owner_).exists_component<T>(*this);
+        return (*owner_).exists_component<T>(id_);
     }
 
     template < typename T >
     const T& const_entity::get_component() const {
-        return (*owner_).get_component<T>(*this);
+        return (*owner_).get_component<T>(id_);
     }
 
     template < typename T >
     const T* const_entity::find_component() const noexcept {
-        return (*owner_).find_component<T>(*this);
+        return (*owner_).find_component<T>(id_);
     }
 
     template < typename... Ts >
     std::tuple<const Ts&...> const_entity::get_components() const {
-        return (*owner_).get_components<Ts...>(*this);
+        return (*owner_).get_components<Ts...>(id_);
     }
 
     template < typename... Ts >
     std::tuple<const Ts*...> const_entity::find_components() const noexcept {
-        return (*owner_).find_components<Ts...>(*this);
+        return (*owner_).find_components<Ts...>(id_);
     }
 
     inline bool operator==(const const_entity& l, const const_entity& r) noexcept {
@@ -1098,86 +1170,184 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
+    //
+    // registry::uentity
+    //
+
+    inline registry::uentity::uentity(registry& owner, entity_id id) noexcept
+    : id_(id)
+    , owner_(&owner) {}
+
+    inline registry::uentity::uentity(entity_id ent) noexcept
+    : id_(ent) {}
+
+    inline registry::uentity::uentity(entity ent) noexcept
+    : id_(ent.id())
+    , owner_(&ent.owner()) {}
+
+    inline registry::uentity::operator entity_id() const noexcept {
+        return id_;
+    }
+
+    inline registry::uentity::operator entity() const noexcept {
+        assert(owner_);
+        return {*owner_, id_};
+    }
+
+    inline registry::uentity::operator const_entity() const noexcept {
+        assert(owner_);
+        return {*owner_, id_};
+    }
+
+    inline entity_id registry::uentity::id() const noexcept {
+        return id_;
+    }
+
+    inline registry* registry::uentity::owner() noexcept {
+        return owner_;
+    }
+
+    inline const registry* registry::uentity::owner() const noexcept {
+        return owner_;
+    }
+
+    inline bool registry::uentity::check_owner(const registry* owner) const noexcept {
+        return !owner_ || owner_ == owner;
+    }
+
+    //
+    // registry::const_uentity
+    //
+
+    inline registry::const_uentity::const_uentity(const registry& owner, entity_id id) noexcept
+    : id_(id)
+    , owner_(&owner) {}
+
+    inline registry::const_uentity::const_uentity(entity_id ent) noexcept
+    : id_(ent) {}
+
+    inline registry::const_uentity::const_uentity(entity ent) noexcept
+    : id_(ent.id())
+    , owner_(&ent.owner()) {}
+
+    inline registry::const_uentity::const_uentity(const_entity ent) noexcept
+    : id_(ent.id())
+    , owner_(&ent.owner()) {}
+
+    inline registry::const_uentity::const_uentity(const uentity& ent) noexcept
+    : id_(ent.id())
+    , owner_(ent.owner()) {}
+
+    inline registry::const_uentity::operator entity_id() const noexcept {
+        return id_;
+    }
+
+    inline registry::const_uentity::operator const_entity() const noexcept {
+        assert(owner_);
+        return {*owner_, id_};
+    }
+
+    inline entity_id registry::const_uentity::id() const noexcept {
+        return id_;
+    }
+
+    inline const registry* registry::const_uentity::owner() const noexcept {
+        return owner_;
+    }
+
+    inline bool registry::const_uentity::check_owner(const registry* owner) const noexcept {
+        return !owner_ || owner_ == owner;
+    }
+
+    //
+    // registry
+    //
+
     inline entity registry::create_entity() {
         if ( !free_entity_ids_.empty() ) {
             const auto free_ent_id = free_entity_ids_.back();
             const auto new_ent_id = detail::upgrade_entity_id(free_ent_id);
-            auto ent = entity(*this, new_ent_id);
             entity_ids_.insert(new_ent_id);
             free_entity_ids_.pop_back();
-            return ent;
+            return {*this, new_ent_id};
 
         }
         if ( last_entity_id_ < detail::entity_id_index_mask ) {
-            auto ent = entity(*this, ++last_entity_id_);
-            entity_ids_.insert(ent.id());
-            return ent;
+            entity_ids_.insert(last_entity_id_ + 1);
+            return {*this, ++last_entity_id_};
         }
         throw std::logic_error("ecs_hpp::registry (entity index overlow)");
     }
 
-    inline bool registry::destroy_entity(const entity& ent) {
+    inline bool registry::destroy_entity(const uentity& ent) {
+        assert(ent.check_owner(this));
         remove_all_components(ent);
-        if ( entity_ids_.unordered_erase(ent.id()) ) {
-            free_entity_ids_.push_back(ent.id());
+        if ( entity_ids_.unordered_erase(ent) ) {
+            free_entity_ids_.push_back(ent);
             return true;
         }
         return false;
     }
 
-    inline bool registry::alive_entity(const const_entity& ent) const noexcept {
-        return entity_ids_.has(ent.id());
+    inline bool registry::alive_entity(const const_uentity& ent) const noexcept {
+        assert(ent.check_owner(this));
+        return entity_ids_.has(ent);
     }
 
     template < typename T, typename... Args >
-    bool registry::assign_component(const entity& ent, Args&&... args) {
+    bool registry::assign_component(const uentity& ent, Args&&... args) {
+        assert(ent.check_owner(this));
         if ( !alive_entity(ent) ) {
             return false;
         }
         get_or_create_storage_<T>().assign(
-            ent.id(),
+            ent,
             std::forward<Args>(args)...);
         return true;
     }
 
     template < typename T >
-    bool registry::remove_component(const entity& ent) {
+    bool registry::remove_component(const uentity& ent) {
+        assert(ent.check_owner(this));
         if ( !alive_entity(ent) ) {
             return false;
         }
         detail::component_storage<T>* storage = find_storage_<T>();
         return storage
-            ? storage->remove(ent.id())
+            ? storage->remove(ent)
             : false;
     }
 
     template < typename T >
-    bool registry::exists_component(const const_entity& ent) const noexcept {
+    bool registry::exists_component(const const_uentity& ent) const noexcept {
+        assert(ent.check_owner(this));
         if ( !alive_entity(ent) ) {
             return false;
         }
         const detail::component_storage<T>* storage = find_storage_<T>();
         return storage
-            ? storage->exists(ent.id())
+            ? storage->exists(ent)
             : false;
     }
 
-    inline std::size_t registry::remove_all_components(const entity& ent) noexcept {
+    inline std::size_t registry::remove_all_components(const uentity& ent) noexcept {
+        assert(ent.check_owner(this));
         if ( !alive_entity(ent) ) {
             return 0u;
         }
-        std::size_t removed_components = 0u;
+        std::size_t removed_count = 0u;
         for ( const auto family_id : storages_ ) {
-            if ( storages_.get(family_id)->remove(ent.id()) ) {
-                ++removed_components;
+            if ( storages_.get(family_id)->remove(ent) ) {
+                ++removed_count;
             }
         }
-        return removed_components;
+        return removed_count;
     }
 
     template < typename T >
-    T& registry::get_component(const entity& ent) {
-        T* component = find_component_impl_<T>(ent);
+    T& registry::get_component(const uentity& ent) {
+        assert(ent.check_owner(this));
+        T* component = find_component<T>(ent);
         if ( component ) {
             return *component;
         }
@@ -1185,8 +1355,9 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    const T& registry::get_component(const const_entity& ent) const {
-        const T* component = find_component_impl_<T>(ent);
+    const T& registry::get_component(const const_uentity& ent) const {
+        assert(ent.check_owner(this));
+        const T* component = find_component<T>(ent);
         if ( component ) {
             return *component;
         }
@@ -1194,46 +1365,81 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    T* registry::find_component(const entity& ent) noexcept {
-        return find_component_impl_<T>(ent);
+    T* registry::find_component(const uentity& ent) noexcept {
+        assert(ent.check_owner(this));
+        detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->find(ent)
+            : nullptr;
     }
 
     template < typename T >
-    const T* registry::find_component(const const_entity& ent) const noexcept {
-        return find_component_impl_<T>(ent);
+    const T* registry::find_component(const const_uentity& ent) const noexcept {
+        assert(ent.check_owner(this));
+        const detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->find(ent)
+            : nullptr;
     }
 
     template < typename... Ts >
-    std::tuple<Ts&...> registry::get_components(const entity& ent) {
+    std::tuple<Ts&...> registry::get_components(const uentity& ent) {
+        assert(ent.check_owner(this));
         return std::make_tuple(std::ref(get_component<Ts>(ent))...);
     }
 
     template < typename... Ts >
-    std::tuple<const Ts&...> registry::get_components(const const_entity& ent) const {
+    std::tuple<const Ts&...> registry::get_components(const const_uentity& ent) const {
+        assert(ent.check_owner(this));
         return std::make_tuple(std::cref(get_component<Ts>(ent))...);
     }
 
     template < typename... Ts >
-    std::tuple<Ts*...> registry::find_components(const entity& ent) noexcept {
+    std::tuple<Ts*...> registry::find_components(const uentity& ent) noexcept {
+        assert(ent.check_owner(this));
         return std::make_tuple(find_component<Ts>(ent)...);
     }
 
     template < typename... Ts >
-    std::tuple<const Ts*...> registry::find_components(const const_entity& ent) const noexcept {
+    std::tuple<const Ts*...> registry::find_components(const const_uentity& ent) const noexcept {
+        assert(ent.check_owner(this));
         return std::make_tuple(find_component<Ts>(ent)...);
+    }
+
+    template < typename T >
+    std::size_t registry::component_count() const noexcept {
+        const detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->count()
+            : 0u;
+    }
+
+    template < typename T >
+    std::size_t registry::entity_component_count(const const_uentity& ent) const noexcept {
+        assert(ent.check_owner(this));
+        if ( !alive_entity(ent) ) {
+            return 0u;
+        }
+        std::size_t component_count = 0u;
+        for ( const auto family_id : storages_ ) {
+            if ( storages_.get(family_id)->has(ent) ) {
+                ++component_count;
+            }
+        }
+        return component_count;
     }
 
     template < typename F >
     void registry::for_each_entity(F&& f) {
         for ( const auto id : entity_ids_ ) {
-            f(entity(*this, id));
+            f({*this, id});
         }
     }
 
     template < typename F >
     void registry::for_each_entity(F&& f) const {
         for ( const auto id : entity_ids_ ) {
-            f(const_entity(*this, id));
+            f({*this, id});
         }
     }
 
@@ -1241,7 +1447,9 @@ namespace ecs_hpp
     void registry::for_each_component(F&& f) {
         detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
-            storage->for_each_component(std::forward<F>(f));
+            storage->for_each_component([this, &f](const entity_id e, T& t){
+                f(uentity{*this, e}, t);
+            });
         }
     }
 
@@ -1249,7 +1457,9 @@ namespace ecs_hpp
     void registry::for_each_component(F&& f) const {
         const detail::component_storage<T>* storage = find_storage_<T>();
         if ( storage ) {
-            storage->for_each_component(std::forward<F>(f));
+            storage->for_each_component([this, &f](const entity_id e, const T& t){
+                f(const_uentity{*this, e}, t);
+            });
         }
     }
 
@@ -1313,22 +1523,6 @@ namespace ecs_hpp
             storages_.get(family).get());
     }
 
-    template < typename T >
-    T* registry::find_component_impl_(const entity& ent) noexcept {
-        detail::component_storage<T>* storage = find_storage_<T>();
-        return storage
-            ? storage->find(ent.id())
-            : nullptr;
-    }
-
-    template < typename T >
-    const T* registry::find_component_impl_(const const_entity& ent) const noexcept {
-        const detail::component_storage<T>* storage = find_storage_<T>();
-        return storage
-            ? storage->find(ent.id())
-            : nullptr;
-    }
-
     template < typename T
              , typename... Ts
              , typename F
@@ -1341,7 +1535,7 @@ namespace ecs_hpp
         (void)iseq;
         const auto ss = std::make_tuple(find_storage_<Ts>()...);
         if ( !detail::tuple_contains(ss, nullptr) ) {
-            for_each_component<T>([this, &f, &ss](const entity& e, T& t) {
+            for_each_component<T>([this, &f, &ss](const uentity& e, T& t) {
                 for_joined_components_impl_<Ts...>(e, f, ss, t);
             });
         }
@@ -1359,7 +1553,7 @@ namespace ecs_hpp
         (void)iseq;
         const auto ss = std::make_tuple(find_storage_<Ts>()...);
         if ( !detail::tuple_contains(ss, nullptr) ) {
-            for_each_component<T>([this, &f, &ss](const const_entity& e, const T& t) {
+            for_each_component<T>([this, &f, &ss](const const_uentity& e, const T& t) {
                 detail::as_const(*this).for_joined_components_impl_<Ts...>(e, f, ss, t);
             });
         }
@@ -1371,12 +1565,12 @@ namespace ecs_hpp
              , typename Ss
              , typename... Cs >
     void registry::for_joined_components_impl_(
-        const entity& e,
+        const uentity& e,
         const F& f,
         const Ss& ss,
         Cs&... cs)
     {
-        T* c = std::get<0>(ss)->find(e.id());
+        T* c = std::get<0>(ss)->find(e);
         if ( c ) {
             for_joined_components_impl_<Ts...>(
                 e,
@@ -1393,12 +1587,12 @@ namespace ecs_hpp
              , typename Ss
              , typename... Cs >
     void registry::for_joined_components_impl_(
-        const const_entity& e,
+        const const_uentity& e,
         const F& f,
         const Ss& ss,
         const Cs&... cs) const
     {
-        const T* c = std::get<0>(ss)->find(e.id());
+        const T* c = std::get<0>(ss)->find(e);
         if ( c ) {
             for_joined_components_impl_<Ts...>(
                 e,
@@ -1411,7 +1605,7 @@ namespace ecs_hpp
 
     template < typename F, typename... Cs >
     void registry::for_joined_components_impl_(
-        const entity& e,
+        const uentity& e,
         const F& f,
         const std::tuple<>& ss,
         Cs&... cs)
@@ -1422,7 +1616,7 @@ namespace ecs_hpp
 
     template < typename F, typename... Cs >
     void registry::for_joined_components_impl_(
-        const const_entity& e,
+        const const_uentity& e,
         const F& f,
         const std::tuple<>& ss,
         const Cs&... cs) const
