@@ -31,6 +31,11 @@ namespace ecs_hpp
     class entity;
     class const_entity;
 
+    template < typename T >
+    class component;
+    template < typename T >
+    class const_component;
+
     class system;
     class registry;
 
@@ -662,6 +667,9 @@ namespace ecs_hpp
 {
     class entity final {
     public:
+        entity(const entity&) = default;
+        entity& operator=(const entity&) = default;
+
         entity(registry& owner) noexcept;
         entity(registry& owner, entity_id id) noexcept;
 
@@ -711,7 +719,10 @@ namespace ecs_hpp
     };
 
     bool operator==(const entity& l, const entity& r) noexcept;
+    bool operator==(const entity& l, const const_entity& r) noexcept;
+
     bool operator!=(const entity& l, const entity& r) noexcept;
+    bool operator!=(const entity& l, const const_entity& r) noexcept;
 }
 
 namespace std
@@ -738,6 +749,9 @@ namespace ecs_hpp
 {
     class const_entity final {
     public:
+        const_entity(const const_entity&) = default;
+        const_entity& operator=(const const_entity&) = default;
+
         const_entity(const entity& ent) noexcept;
 
         const_entity(const registry& owner) noexcept;
@@ -767,7 +781,10 @@ namespace ecs_hpp
         entity_id id_{0u};
     };
 
+    bool operator==(const const_entity& l, const entity& r) noexcept;
     bool operator==(const const_entity& l, const const_entity& r) noexcept;
+
+    bool operator!=(const const_entity& l, const entity& r) noexcept;
     bool operator!=(const const_entity& l, const const_entity& r) noexcept;
 }
 
@@ -781,6 +798,113 @@ namespace std
             return ecs_hpp::detail::hash_combine(
                 std::hash<const ecs_hpp::registry*>()(&ent.owner()),
                 std::hash<ecs_hpp::entity_id>()(ent.id()));
+        }
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
+// component
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename T >
+    class component final {
+    public:
+        component(const component&) = default;
+        component& operator=(const component&) = default;
+
+        component(const entity& owner) noexcept;
+
+        entity& owner() noexcept;
+        const entity& owner() const noexcept;
+
+        bool remove();
+        bool exists() const noexcept;
+
+        template < typename... Args >
+        bool assign(Args&&... args);
+
+        T& get();
+        const T& get() const;
+
+        T* find() noexcept;
+        const T* find() const noexcept;
+    private:
+        entity owner_;
+    };
+
+    template < typename T >
+    bool operator==(const component<T>& l, const component<T>& r) noexcept;
+    template < typename T >
+    bool operator==(const component<T>& l, const const_component<T>& r) noexcept;
+
+    template < typename T >
+    bool operator!=(const component<T>& l, const component<T>& r) noexcept;
+    template < typename T >
+    bool operator!=(const component<T>& l, const const_component<T>& r) noexcept;
+}
+
+namespace std
+{
+    template < typename T >
+    struct hash<ecs_hpp::component<T>>
+        : std::unary_function<const ecs_hpp::component<T>&, std::size_t>
+    {
+        std::size_t operator()(const ecs_hpp::component<T>& comp) const noexcept {
+            return std::hash<ecs_hpp::entity>()(comp.owner());
+        }
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
+// const_component
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename T >
+    class const_component final {
+    public:
+        const_component(const const_component&) = default;
+        const_component& operator=(const const_component&) = default;
+
+        const_component(const component<T>& comp) noexcept;
+        const_component(const const_entity& owner) noexcept;
+
+        const const_entity& owner() const noexcept;
+
+        bool exists() const noexcept;
+
+        const T& get() const;
+        const T* find() const noexcept;
+    private:
+        const_entity owner_;
+    };
+
+    template < typename T >
+    bool operator==(const const_component<T>& l, const component<T>& r) noexcept;
+    template < typename T >
+    bool operator==(const const_component<T>& l, const const_component<T>& r) noexcept;
+
+    template < typename T >
+    bool operator!=(const const_component<T>& l, const component<T>& r) noexcept;
+    template < typename T >
+    bool operator!=(const const_component<T>& l, const const_component<T>& r) noexcept;
+}
+
+namespace std
+{
+    template < typename T >
+    struct hash<ecs_hpp::const_component<T>>
+        : std::unary_function<const ecs_hpp::const_component<T>&, std::size_t>
+    {
+        std::size_t operator()(const ecs_hpp::const_component<T>& comp) const noexcept {
+            return std::hash<ecs_hpp::const_entity>()(comp.owner());
         }
     };
 }
@@ -854,6 +978,14 @@ namespace ecs_hpp
     public:
         registry() = default;
         ~registry() noexcept = default;
+
+        entity wrap_entity(const const_uentity& ent) noexcept;
+        const_entity wrap_entity(const const_uentity& ent) const noexcept;
+
+        template < typename T >
+        component<T> wrap_component(const const_uentity& ent) noexcept;
+        template < typename T >
+        const_component<T> wrap_component(const const_uentity& ent) const noexcept;
 
         entity create_entity();
 
@@ -1091,7 +1223,16 @@ namespace ecs_hpp
             && l.id() == r.id();
     }
 
+    inline bool operator==(const entity& l, const const_entity& r) noexcept {
+        return &l.owner() == &r.owner()
+            && l.id() == r.id();
+    }
+
     inline bool operator!=(const entity& l, const entity& r) noexcept {
+        return !(l == r);
+    }
+
+    inline bool operator!=(const entity& l, const const_entity& r) noexcept {
         return !(l == r);
     }
 }
@@ -1152,12 +1293,158 @@ namespace ecs_hpp
         return (*owner_).find_components<Ts...>(id_);
     }
 
+    inline bool operator==(const const_entity& l, const entity& r) noexcept {
+        return &l.owner() == &r.owner()
+            && l.id() == r.id();
+    }
+
     inline bool operator==(const const_entity& l, const const_entity& r) noexcept {
         return &l.owner() == &r.owner()
             && l.id() == r.id();
     }
 
+    inline bool operator!=(const const_entity& l, const entity& r) noexcept {
+        return !(l == r);
+    }
+
     inline bool operator!=(const const_entity& l, const const_entity& r) noexcept {
+        return !(l == r);
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
+// component impl
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename T >
+    component<T>::component(const entity& owner) noexcept
+    : owner_(owner) {}
+
+    template < typename T >
+    entity& component<T>::owner() noexcept {
+        return owner_;
+    }
+
+    template < typename T >
+    const entity& component<T>::owner() const noexcept {
+        return owner_;
+    }
+
+    template < typename T >
+    bool component<T>::remove() {
+        return owner_.remove_component<T>();
+    }
+
+    template < typename T >
+    bool component<T>::exists() const noexcept {
+        return owner_.exists_component<T>();
+    }
+
+    template < typename T >
+    template < typename... Args >
+    bool component<T>::assign(Args&&... args) {
+        return owner_.assign_component<T>(
+            std::forward<Args>(args)...);
+    }
+
+    template < typename T >
+    T& component<T>::get() {
+        return owner_.get_component<T>();
+    }
+
+    template < typename T >
+    const T& component<T>::get() const {
+        return detail::as_const(owner_).template get_component<T>();
+    }
+
+    template < typename T >
+    T* component<T>::find() noexcept {
+        return owner_.find_component<T>();
+    }
+
+    template < typename T >
+    const T* component<T>::find() const noexcept {
+        return detail::as_const(owner_).template find_component<T>();
+    }
+
+    template < typename T >
+    bool operator==(const component<T>& l, const component<T>& r) noexcept {
+        return l.owner() == r.owner();
+    }
+
+    template < typename T >
+    bool operator==(const component<T>& l, const const_component<T>& r) noexcept {
+        return l.owner() == r.owner();
+    }
+
+    template < typename T >
+    bool operator!=(const component<T>& l, const component<T>& r) noexcept {
+        return !(l == r);
+    }
+
+    template < typename T >
+    bool operator!=(const component<T>& l, const const_component<T>& r) noexcept {
+        return !(l == r);
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
+// const_component impl
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename T >
+    const_component<T>::const_component(const component<T>& comp) noexcept
+    : owner_(comp.owner()) {}
+
+    template < typename T >
+    const_component<T>::const_component(const const_entity& owner) noexcept
+    : owner_(owner) {}
+
+    template < typename T >
+    const const_entity& const_component<T>::owner() const noexcept {
+        return owner_;
+    }
+
+    template < typename T >
+    bool const_component<T>::exists() const noexcept {
+        return detail::as_const(owner_).template exists_component<T>();
+    }
+
+    template < typename T >
+    const T& const_component<T>::get() const {
+        return detail::as_const(owner_).template get_component<T>();
+    }
+
+    template < typename T >
+    const T* const_component<T>::find() const noexcept {
+        return detail::as_const(owner_).template find_component<T>();
+    }
+
+    template < typename T >
+    bool operator==(const const_component<T>& l, const component<T>& r) noexcept {
+        return l.owner() == r.owner();
+    }
+
+    template < typename T >
+    bool operator==(const const_component<T>& l, const const_component<T>& r) noexcept {
+        return l.owner() == r.owner();
+    }
+
+    template < typename T >
+    bool operator!=(const const_component<T>& l, const component<T>& r) noexcept {
+        return !(l == r);
+    }
+
+    template < typename T >
+    bool operator!=(const const_component<T>& l, const const_component<T>& r) noexcept {
         return !(l == r);
     }
 }
@@ -1263,18 +1550,36 @@ namespace ecs_hpp
     // registry
     //
 
+    inline entity registry::wrap_entity(const const_uentity& ent) noexcept {
+        return {*this, ent.id()};
+    }
+
+    inline const_entity registry::wrap_entity(const const_uentity& ent) const noexcept {
+        return {*this, ent.id()};
+    }
+
+    template < typename T >
+    component<T> registry::wrap_component(const const_uentity& ent) noexcept {
+        return {wrap_entity(ent)};
+    }
+
+    template < typename T >
+    const_component<T> registry::wrap_component(const const_uentity& ent) const noexcept {
+        return {wrap_entity(ent)};
+    }
+
     inline entity registry::create_entity() {
         if ( !free_entity_ids_.empty() ) {
             const auto free_ent_id = free_entity_ids_.back();
             const auto new_ent_id = detail::upgrade_entity_id(free_ent_id);
             entity_ids_.insert(new_ent_id);
             free_entity_ids_.pop_back();
-            return {*this, new_ent_id};
+            return wrap_entity(new_ent_id);
 
         }
         if ( last_entity_id_ < detail::entity_id_index_mask ) {
             entity_ids_.insert(last_entity_id_ + 1);
-            return {*this, ++last_entity_id_};
+            return wrap_entity(++last_entity_id_);
         }
         throw std::logic_error("ecs_hpp::registry (entity index overlow)");
     }
