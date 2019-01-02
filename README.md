@@ -35,15 +35,15 @@
 
 ```cpp
 struct position_component {
-    float x{0};
-    float y{0};
+    float x;
+    float y;
     position_component(float nx, float ny)
     : x(nx), y(ny) {}
 };
 
 struct velocity_component {
-    float dx{0};
-    float dy{0};
+    float dx;
+    float dy;
     velocity_component(float ndx, float ndy)
     : dx(ndx), dy(ndy) {}
 };
