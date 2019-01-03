@@ -287,13 +287,33 @@ TEST_CASE("registry") {
     SECTION("entities") {
         {
             ecs::registry w;
+            ecs::entity e1{w};
+            ecs::entity e2 = e1;
+            e2 = e1;
+
+            ecs::const_entity ce1{w};
+            ecs::const_entity ce2 = ce1;
+            ce2 = ce1;
+
+            ecs::const_entity ce3 = e1;
+            ce3 = e2;
+        }
+        {
+            ecs::registry w;
 
             ecs::entity e1{w};
             ecs::entity e2{w};
+            ecs::const_entity e3{w};
 
             REQUIRE(e1 == e2);
+            REQUIRE(e2 == e3);
+
+            REQUIRE_FALSE(e1 != e2);
+            REQUIRE_FALSE(e2 != e3);
+
             REQUIRE_FALSE(w.alive_entity(e1));
             REQUIRE_FALSE(w.alive_entity(e2));
+            REQUIRE_FALSE(w.alive_entity(e3));
 
             REQUIRE_FALSE(w.destroy_entity(e1));
             REQUIRE_FALSE(w.destroy_entity(e2));
@@ -301,12 +321,23 @@ TEST_CASE("registry") {
         {
             ecs::registry w;
 
-            auto e1 = w.create_entity();
-            auto e2 = w.create_entity();
+            ecs::entity e1 = w.create_entity();
+            ecs::entity e2 = w.create_entity();
+            ecs::const_entity e3 = w.create_entity();
+            ecs::entity ee3 = w.wrap_entity(e3);
 
             REQUIRE(e1 != e2);
+            REQUIRE(e2 != e3);
+            REQUIRE_FALSE(e3 != ee3);
+
+            REQUIRE_FALSE(e1 == e2);
+            REQUIRE_FALSE(e2 == e3);
+            REQUIRE(e3 == ee3);
+
             REQUIRE(w.alive_entity(e1));
             REQUIRE(w.alive_entity(e2));
+            REQUIRE(w.alive_entity(e3));
+            REQUIRE(w.alive_entity(ee3));
 
             REQUIRE(w.destroy_entity(e1));
             REQUIRE_FALSE(w.alive_entity(e1));
@@ -316,8 +347,13 @@ TEST_CASE("registry") {
             REQUIRE_FALSE(w.alive_entity(e1));
             REQUIRE_FALSE(w.alive_entity(e2));
 
+            REQUIRE(w.destroy_entity(ee3));
+            REQUIRE_FALSE(w.alive_entity(e3));
+            REQUIRE_FALSE(w.alive_entity(ee3));
+
             REQUIRE_FALSE(w.destroy_entity(e1));
             REQUIRE_FALSE(w.destroy_entity(e2));
+            REQUIRE_FALSE(w.destroy_entity(ee3));
         }
         {
             ecs::registry w;
@@ -362,6 +398,92 @@ TEST_CASE("registry") {
             }
             // entity index overflow
             REQUIRE_THROWS_AS(w.create_entity(), std::logic_error);
+        }
+    }
+    SECTION("components") {
+        {
+            ecs::registry w;
+            ecs::entity e1 = w.create_entity();
+            ecs::entity e2 = w.create_entity();
+
+            {
+                REQUIRE(w.wrap_component<position_c>(e1) == ecs::component<position_c>(e1));
+                REQUIRE_FALSE(w.wrap_component<position_c>(e1) == ecs::component<position_c>(e2));
+            }
+            {
+                const ecs::registry& ww = w;
+                REQUIRE(ww.wrap_component<position_c>(e1) == ecs::component<position_c>(e1));
+                REQUIRE_FALSE(ww.wrap_component<position_c>(e1) == ecs::component<position_c>(e2));
+            }
+
+            {
+                ecs::component<position_c> c1{e1};
+                REQUIRE_FALSE(c1.exists());
+            }
+        }
+        {
+            ecs::registry w;
+            ecs::const_entity e1 = w.create_entity();
+            ecs::const_entity e2 = w.create_entity();
+
+            {
+                REQUIRE(w.wrap_component<position_c>(e1) == ecs::const_component<position_c>(e1));
+                REQUIRE_FALSE(w.wrap_component<position_c>(e1) == ecs::const_component<position_c>(e2));
+            }
+        }
+        {
+            ecs::registry w;
+            ecs::entity e1 = w.create_entity();
+
+            ecs::component<position_c> c1 = w.wrap_component<position_c>(e1);
+            ecs::const_component<position_c> c2 = w.wrap_component<position_c>(e1);
+            REQUIRE(c1 == c2);
+            REQUIRE_FALSE(c1 != c2);
+
+            REQUIRE(c1.owner() == e1);
+            REQUIRE(c2.owner() == e1);
+
+            REQUIRE_FALSE(c1.exists());
+            REQUIRE_FALSE(c2.exists());
+            REQUIRE_FALSE(c1.find());
+            REQUIRE_FALSE(c2.find());
+            REQUIRE_THROWS_AS(c1.get(), std::logic_error);
+            REQUIRE_THROWS_AS(c2.get(), std::logic_error);
+
+            REQUIRE(c1.assign(4,2));
+
+            REQUIRE(c1.exists());
+            REQUIRE(c2.exists());
+            REQUIRE(c1.find()->x == 4);
+            REQUIRE(c1.find()->y == 2);
+            REQUIRE(c2.find()->x == 4);
+            REQUIRE(c2.find()->y == 2);
+            REQUIRE(c1.get().x == 4);
+            REQUIRE(c1.get().y == 2);
+            REQUIRE(c2.get().x == 4);
+            REQUIRE(c2.get().y == 2);
+
+            REQUIRE(c1.assign(2,4));
+
+            REQUIRE(c1.find()->x == 2);
+            REQUIRE(c1.find()->y == 4);
+            REQUIRE(c2.find()->x == 2);
+            REQUIRE(c2.find()->y == 4);
+            REQUIRE(c1.get().x == 2);
+            REQUIRE(c1.get().y == 4);
+            REQUIRE(c2.get().x == 2);
+            REQUIRE(c2.get().y == 4);
+
+            REQUIRE(c1.remove());
+
+            REQUIRE_FALSE(c1.exists());
+            REQUIRE_FALSE(c2.exists());
+            REQUIRE_FALSE(c1.find());
+            REQUIRE_FALSE(c2.find());
+            REQUIRE_THROWS_AS(c1.get(), std::logic_error);
+            REQUIRE_THROWS_AS(c2.get(), std::logic_error);
+
+            REQUIRE_FALSE(c1.remove());
         }
     }
     SECTION("component_assigning") {
@@ -418,6 +540,9 @@ TEST_CASE("registry") {
 
                 REQUIRE_FALSE(e1.exists_component<position_c>());
                 REQUIRE_FALSE(e1.exists_component<velocity_c>());
+                REQUIRE_FALSE(w.component_count<position_c>());
+                REQUIRE_FALSE(w.component_count<velocity_c>());
+                REQUIRE_FALSE(w.entity_component_count<position_c>(e1));
             }
         }
         {
