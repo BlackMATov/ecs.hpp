@@ -589,9 +589,9 @@ namespace ecs_hpp
             bool has(entity_id id) const noexcept override;
 
             template < typename F >
-            void for_each_component(F&& f) noexcept;
+            void for_each_component(F&& f);
             template < typename F >
-            void for_each_component(F&& f) const noexcept;
+            void for_each_component(F&& f) const;
         private:
             registry& owner_;
             detail::sparse_map<entity_id, T, entity_id_indexer> components_;
@@ -641,7 +641,7 @@ namespace ecs_hpp
 
         template < typename T >
         template < typename F >
-        void component_storage<T>::for_each_component(F&& f) noexcept {
+        void component_storage<T>::for_each_component(F&& f) {
             for ( const auto id : components_ ) {
                 f(id, components_.get(id));
             }
@@ -649,7 +649,7 @@ namespace ecs_hpp
 
         template < typename T >
         template < typename F >
-        void component_storage<T>::for_each_component(F&& f) const noexcept {
+        void component_storage<T>::for_each_component(F&& f) const {
             for ( const auto id : components_ ) {
                 f(id, components_.get(id));
             }
