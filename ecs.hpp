@@ -13,6 +13,7 @@
 #include <tuple>
 #include <memory>
 #include <vector>
+#include <limits>
 #include <utility>
 #include <iterator>
 #include <stdexcept>
@@ -41,6 +42,7 @@ namespace ecs_hpp
 
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
+    using priority_t = std::int32_t;
 
     constexpr std::size_t entity_id_index_bits = 22u;
     constexpr std::size_t entity_id_version_bits = 10u;
@@ -1072,8 +1074,12 @@ namespace ecs_hpp
         void for_joined_components(F&& f) const;
 
         template < typename T, typename... Args >
-        void add_system(Args&&... args);
-        void process_systems();
+        void add_system(priority_t priority, Args&&... args);
+
+        void process_all_systems();
+        void process_systems_above(priority_t min);
+        void process_systems_below(priority_t max);
+        void process_systems_in_range(priority_t min, priority_t max);
     private:
         template < typename T >
         detail::component_storage<T>* find_storage_() noexcept;
@@ -1146,7 +1152,7 @@ namespace ecs_hpp
         detail::sparse_map<family_id, storage_uptr> storages_;
 
         using system_uptr = std::unique_ptr<system>;
-        std::vector<system_uptr> systems_;
+        std::vector<std::pair<priority_t, system_uptr>> systems_;
     };
 }
 
@@ -1831,14 +1837,44 @@ namespace ecs_hpp
     }
 
     template < typename T, typename... Args >
-    void registry::add_system(Args&&... args) {
-        systems_.emplace_back(
+    void registry::add_system(priority_t priority, Args&&... args) {
+        auto iter = std::upper_bound(
+            systems_.begin(), systems_.end(), priority,
+            [](priority_t pr, const auto& r){
+                return pr < r.first;
+            });
+        systems_.emplace(
+            iter,
+            priority,
             std::make_unique<T>(std::forward<Args>(args)...));
     }
 
-    inline void registry::process_systems() {
-        for ( auto& s : systems_ ) {
-            s->process(*this);
+    inline void registry::process_all_systems() {
+        process_systems_in_range(
+            std::numeric_limits<priority_t>::min(),
+            std::numeric_limits<priority_t>::max());
+    }
+
+    inline void registry::process_systems_above(priority_t min) {
+        process_systems_in_range(
+            min,
+            std::numeric_limits<priority_t>::max());
+    }
+
+    inline void registry::process_systems_below(priority_t max) {
+        process_systems_in_range(
+            std::numeric_limits<priority_t>::min(),
+            max);
+    }
+
+    inline void registry::process_systems_in_range(priority_t min, priority_t max) {
+        const auto first = std::lower_bound(
+            systems_.begin(), systems_.end(), min,
+            [](const auto& p, priority_t pr) noexcept {
+                return p.first < pr;
+            });
+        for ( auto iter = first; iter != systems_.end() && iter->first <= max; ++iter ) {
+            iter->second->process(*this);
         }
     }
 
