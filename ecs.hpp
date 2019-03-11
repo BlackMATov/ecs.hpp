@@ -589,9 +589,9 @@ namespace ecs_hpp
             bool has(entity_id id) const noexcept override;
 
             template < typename F >
-            void for_each_component(F&& f) noexcept;
+            void for_each_component(F&& f);
             template < typename F >
-            void for_each_component(F&& f) const noexcept;
+            void for_each_component(F&& f) const;
         private:
             registry& owner_;
             detail::sparse_map<entity_id, T, entity_id_indexer> components_;
@@ -641,7 +641,7 @@ namespace ecs_hpp
 
         template < typename T >
         template < typename F >
-        void component_storage<T>::for_each_component(F&& f) noexcept {
+        void component_storage<T>::for_each_component(F&& f) {
             for ( const auto id : components_ ) {
                 f(id, components_.get(id));
             }
@@ -649,7 +649,7 @@ namespace ecs_hpp
 
         template < typename T >
         template < typename F >
-        void component_storage<T>::for_each_component(F&& f) const noexcept {
+        void component_storage<T>::for_each_component(F&& f) const {
             for ( const auto id : components_ ) {
                 f(id, components_.get(id));
             }
@@ -667,11 +667,14 @@ namespace ecs_hpp
 {
     class entity final {
     public:
+        entity(registry& owner) noexcept;
+        entity(registry& owner, entity_id id) noexcept;
+
         entity(const entity&) = default;
         entity& operator=(const entity&) = default;
 
-        entity(registry& owner) noexcept;
-        entity(registry& owner, entity_id id) noexcept;
+        entity(entity&&) noexcept = default;
+        entity& operator=(entity&&) noexcept = default;
 
         registry& owner() noexcept;
         const registry& owner() const noexcept;
@@ -751,13 +754,16 @@ namespace ecs_hpp
 {
     class const_entity final {
     public:
-        const_entity(const const_entity&) = default;
-        const_entity& operator=(const const_entity&) = default;
-
         const_entity(const entity& ent) noexcept;
 
         const_entity(const registry& owner) noexcept;
         const_entity(const registry& owner, entity_id id) noexcept;
+
+        const_entity(const const_entity&) = default;
+        const_entity& operator=(const const_entity&) = default;
+
+        const_entity(const_entity&&) noexcept = default;
+        const_entity& operator=(const_entity&&) noexcept = default;
 
         const registry& owner() const noexcept;
         entity_id id() const noexcept;
@@ -817,10 +823,13 @@ namespace ecs_hpp
     template < typename T >
     class component final {
     public:
+        component(const entity& owner) noexcept;
+
         component(const component&) = default;
         component& operator=(const component&) = default;
 
-        component(const entity& owner) noexcept;
+        component(component&&) noexcept = default;
+        component& operator=(component&&) noexcept = default;
 
         entity& owner() noexcept;
         const entity& owner() const noexcept;
@@ -877,11 +886,14 @@ namespace ecs_hpp
     template < typename T >
     class const_component final {
     public:
+        const_component(const component<T>& comp) noexcept;
+        const_component(const const_entity& owner) noexcept;
+
         const_component(const const_component&) = default;
         const_component& operator=(const const_component&) = default;
 
-        const_component(const component<T>& comp) noexcept;
-        const_component(const const_entity& owner) noexcept;
+        const_component(const_component&&) noexcept = default;
+        const_component& operator=(const_component&&) noexcept = default;
 
         const const_entity& owner() const noexcept;
 
@@ -988,6 +1000,12 @@ namespace ecs_hpp
     public:
         registry() = default;
         ~registry() noexcept = default;
+
+        registry(const registry& other) = delete;
+        registry& operator=(const registry& other) = delete;
+
+        registry(registry&& other) noexcept = default;
+        registry& operator=(registry&& other) noexcept = default;
 
         entity wrap_entity(const const_uentity& ent) noexcept;
         const_entity wrap_entity(const const_uentity& ent) const noexcept;
