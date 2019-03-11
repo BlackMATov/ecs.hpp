@@ -79,8 +79,8 @@ private:
 };
 
 ecs_hpp::registry world;
-world.add_system<movement_system>();
-world.add_system<gravity_system>(9.8f);
+world.add_system<movement_system>(0);
+world.add_system<gravity_system>(1, 9.8f);
 
 auto entity_one = world.create_entity();
 world.assign_component<position_component>(entity_one, 4.f, 2.f);
@@ -90,7 +90,7 @@ auto entity_two = world.create_entity();
 entity_two.assign_component<position_component>(4.f, 2.f);
 entity_two.assign_component<velocity_component>(10.f, 20.f);
 
-world.process_systems();
+world.process_all_systems();
 ```
 
 ## API

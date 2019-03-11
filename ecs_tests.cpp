@@ -909,7 +909,7 @@ TEST_CASE("registry") {
             };
 
             ecs::registry w;
-            w.add_system<movement_system>();
+            w.add_system<movement_system>(0);
 
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
@@ -919,13 +919,63 @@ TEST_CASE("registry") {
             e2.assign_component<position_c>(5, 6);
             e2.assign_component<velocity_c>(7, 8);
 
-            w.process_systems();
+            w.process_all_systems();
 
             REQUIRE(e1.get_component<position_c>().x == 1 + 3);
             REQUIRE(e1.get_component<position_c>().y == 2 + 4);
 
             REQUIRE(e2.get_component<position_c>().x == 5 + 7);
             REQUIRE(e2.get_component<position_c>().y == 6 + 8);
+        }
+        {
+            class system_n : public ecs::system {
+            public:
+                system_n(int& i, int n) : i_(i), n_(n) {}
+                void process(ecs::registry&) override {
+                    i_ += n_;
+                }
+            private:
+                int& i_;
+                int n_;
+            };
+
+            int i = 0;
+            ecs::registry w;
+            w.add_system<system_n>(20, std::ref(i), 2);
+            w.add_system<system_n>(10, std::ref(i), 1);
+            REQUIRE(i == 0);
+            w.process_all_systems();
+            REQUIRE(i == 3);
+            w.process_systems_below(10);
+            REQUIRE(i == 4);
+            w.process_systems_above(20);
+            REQUIRE(i == 6);
+            w.process_systems_below(20);
+            REQUIRE(i == 9);
+            w.process_systems_above(10);
+            REQUIRE(i == 12);
+
+            w.process_systems_below(9);
+            w.process_systems_above(21);
+            REQUIRE(i == 12);
+
+            w.process_systems_in_range(0, 9);
+            w.process_systems_in_range(11, 19);
+            w.process_systems_in_range(21, 30);
+            REQUIRE(i == 12);
+
+            w.process_systems_in_range(0, 10);
+            REQUIRE(i == 13);
+            w.process_systems_in_range(10, 19);
+            REQUIRE(i == 14);
+            w.process_systems_in_range(10, 20);
+            REQUIRE(i == 17);
+            w.process_systems_in_range(20, 30);
+            REQUIRE(i == 19);
+            w.process_systems_in_range(10, 20);
+            REQUIRE(i == 22);
+            w.process_systems_in_range(0, 30);
+            REQUIRE(i == 25);
         }
     }
 }
@@ -976,8 +1026,8 @@ TEST_CASE("example") {
     };
 
     ecs_hpp::registry world;
-    world.add_system<movement_system>();
-    world.add_system<gravity_system>(9.8f);
+    world.add_system<movement_system>(0);
+    world.add_system<gravity_system>(1, 9.8f);
 
     auto entity_one = world.create_entity();
     world.assign_component<position_component>(entity_one, 4.f, 2.f);
@@ -987,5 +1037,5 @@ TEST_CASE("example") {
     entity_two.assign_component<position_component>(4.f, 2.f);
     entity_two.assign_component<velocity_component>(10.f, 20.f);
 
-    world.process_systems();
+    world.process_all_systems();
 }
