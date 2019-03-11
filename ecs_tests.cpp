@@ -978,6 +978,45 @@ TEST_CASE("registry") {
             REQUIRE(i == 25);
         }
     }
+    SECTION("fillers") {
+        struct component_n {
+            int i = 0;
+            component_n(int ni) : i(ni) {}
+        };
+
+        class system_n : public ecs::system {
+        public:
+            system_n(int n) : n_(n) {}
+            void process(ecs::registry& owner) override {
+                owner.for_each_component<component_n>(
+                    [this](const ecs::const_entity&, component_n& c) noexcept {
+                        c.i += n_;
+                    });
+            }
+        private:
+            int n_;
+        };
+        {
+            ecs::registry w;
+            ecs::registry_filler(w)
+                .system<system_n>(0, 1)
+                .system<system_n>(0, 2);
+
+            ecs::entity e1 = w.create_entity();
+            ecs::entity_filler(e1)
+                .component<component_n>(0)
+                .component<component_n>(1);
+
+            ecs::entity e2 = w.create_entity();
+            ecs::entity_filler(e2)
+                .component<component_n>(2);
+
+            w.process_all_systems();
+
+            REQUIRE(e1.get_component<component_n>().i == 4);
+            REQUIRE(e2.get_component<component_n>().i == 5);
+        }
+    }
 }
 
 TEST_CASE("example") {
