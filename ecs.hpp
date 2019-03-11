@@ -1158,6 +1158,45 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// fillers
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    class entity_filler final {
+    public:
+        entity_filler(entity& entity) noexcept
+        : entity_(entity) {}
+
+        template < typename T, typename... Args >
+        entity_filler& component(Args&&... args) {
+            entity_.assign_component<T>(std::forward<Args>(args)...);
+            return *this;
+        }
+    private:
+        entity& entity_;
+    };
+
+    class registry_filler final {
+    public:
+        registry_filler(registry& registry) noexcept
+        : registry_(registry) {}
+
+        template < typename T, typename... Args >
+        registry_filler& system(priority_t priority, Args&&... args) {
+            registry_.add_system<T>(
+                priority,
+                std::forward<Args>(args)...);
+            return *this;
+        }
+    private:
+        registry& registry_;
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
 // entity impl
 //
 // -----------------------------------------------------------------------------
