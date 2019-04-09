@@ -330,12 +330,9 @@ TEST_CASE("registry") {
             REQUIRE_FALSE(e1 != e2);
             REQUIRE_FALSE(e2 != e3);
 
-            REQUIRE_FALSE(w.alive_entity(e1));
-            REQUIRE_FALSE(w.alive_entity(e2));
-            REQUIRE_FALSE(w.alive_entity(e3));
-
-            REQUIRE_FALSE(w.destroy_entity(e1));
-            REQUIRE_FALSE(w.destroy_entity(e2));
+            REQUIRE_FALSE(w.valid_entity(e1));
+            REQUIRE_FALSE(w.valid_entity(e2));
+            REQUIRE_FALSE(w.valid_entity(e3));
         }
         {
             ecs::registry w;
@@ -353,26 +350,22 @@ TEST_CASE("registry") {
             REQUIRE_FALSE(e2 == e3);
             REQUIRE(e3 == ee3);
 
-            REQUIRE(w.alive_entity(e1));
-            REQUIRE(w.alive_entity(e2));
-            REQUIRE(w.alive_entity(e3));
-            REQUIRE(w.alive_entity(ee3));
+            REQUIRE(w.valid_entity(e1));
+            REQUIRE(w.valid_entity(e2));
+            REQUIRE(w.valid_entity(e3));
+            REQUIRE(w.valid_entity(ee3));
 
             REQUIRE(w.destroy_entity(e1));
-            REQUIRE_FALSE(w.alive_entity(e1));
-            REQUIRE(w.alive_entity(e2));
+            REQUIRE_FALSE(w.valid_entity(e1));
+            REQUIRE(w.valid_entity(e2));
 
             REQUIRE(w.destroy_entity(e2));
-            REQUIRE_FALSE(w.alive_entity(e1));
-            REQUIRE_FALSE(w.alive_entity(e2));
+            REQUIRE_FALSE(w.valid_entity(e1));
+            REQUIRE_FALSE(w.valid_entity(e2));
 
             REQUIRE(w.destroy_entity(ee3));
-            REQUIRE_FALSE(w.alive_entity(e3));
-            REQUIRE_FALSE(w.alive_entity(ee3));
-
-            REQUIRE_FALSE(w.destroy_entity(e1));
-            REQUIRE_FALSE(w.destroy_entity(e2));
-            REQUIRE_FALSE(w.destroy_entity(ee3));
+            REQUIRE_FALSE(w.valid_entity(e3));
+            REQUIRE_FALSE(w.valid_entity(ee3));
         }
         {
             ecs::registry w;
@@ -469,7 +462,7 @@ TEST_CASE("registry") {
             REQUIRE_THROWS_AS(c1.get(), std::logic_error);
             REQUIRE_THROWS_AS(c2.get(), std::logic_error);
 
-            REQUIRE(c1.assign(4,2));
+            REQUIRE(c1.assign(4,2) == position_c(4,2));
 
             REQUIRE(c1.exists());
             REQUIRE(c2.exists());
@@ -482,7 +475,7 @@ TEST_CASE("registry") {
             REQUIRE(c2.get().x == 4);
             REQUIRE(c2.get().y == 2);
 
-            REQUIRE(c1.assign(2,4));
+            REQUIRE(&c1.assign(2,4) == &c1.get());
 
             REQUIRE(c1.find()->x == 2);
             REQUIRE(c1.find()->y == 4);
@@ -514,20 +507,23 @@ TEST_CASE("registry") {
                 REQUIRE_FALSE(w.exists_component<position_c>(e1));
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
                 REQUIRE_FALSE(w.component_count<position_c>());
-                REQUIRE_FALSE(w.entity_component_count<position_c>(e1));
+                REQUIRE_FALSE(w.entity_component_count(e1));
+                REQUIRE_FALSE(e1.component_count());
 
-                REQUIRE(w.assign_component<position_c>(e1));
+                REQUIRE(w.assign_component<position_c>(e1) == position_c());
 
                 REQUIRE(w.exists_component<position_c>(e1));
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
                 REQUIRE(w.component_count<position_c>() == 1u);
                 REQUIRE(w.component_count<velocity_c>() == 0u);
-                REQUIRE(w.entity_component_count<position_c>(e1) == 1u);
+                REQUIRE(w.entity_component_count(e1) == 1u);
+                REQUIRE(e1.component_count() == 1u);
 
-                REQUIRE(w.assign_component<velocity_c>(e1));
+                REQUIRE(w.assign_component<velocity_c>(e1) == velocity_c());
                 REQUIRE(w.component_count<position_c>() == 1u);
                 REQUIRE(w.component_count<velocity_c>() == 1u);
-                REQUIRE(w.entity_component_count<position_c>(e1) == 2u);
+                REQUIRE(w.entity_component_count(e1) == 2u);
+                REQUIRE(e1.component_count() == 2u);
 
                 REQUIRE(w.exists_component<position_c>(e1));
                 REQUIRE(w.exists_component<velocity_c>(e1));
@@ -538,30 +534,28 @@ TEST_CASE("registry") {
                 REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
                 REQUIRE_FALSE(w.component_count<position_c>());
                 REQUIRE_FALSE(w.component_count<velocity_c>());
-                REQUIRE_FALSE(w.entity_component_count<position_c>(e1));
+                REQUIRE_FALSE(w.entity_component_count(e1));
+                REQUIRE_FALSE(e1.component_count());
             }
 
             {
                 REQUIRE_FALSE(e1.exists_component<position_c>());
                 REQUIRE_FALSE(e1.exists_component<velocity_c>());
 
-                REQUIRE(e1.assign_component<position_c>());
+                REQUIRE(e1.assign_component<position_c>() == position_c());
 
                 REQUIRE(e1.exists_component<position_c>());
                 REQUIRE_FALSE(e1.exists_component<velocity_c>());
 
-                REQUIRE(e1.assign_component<velocity_c>());
+                REQUIRE(e1.assign_component<velocity_c>() == velocity_c());
 
                 REQUIRE(e1.exists_component<position_c>());
                 REQUIRE(e1.exists_component<velocity_c>());
 
                 REQUIRE(e1.destroy());
 
-                REQUIRE_FALSE(e1.exists_component<position_c>());
-                REQUIRE_FALSE(e1.exists_component<velocity_c>());
                 REQUIRE_FALSE(w.component_count<position_c>());
                 REQUIRE_FALSE(w.component_count<velocity_c>());
-                REQUIRE_FALSE(w.entity_component_count<position_c>(e1));
             }
         }
         {
@@ -570,26 +564,16 @@ TEST_CASE("registry") {
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
 
-            REQUIRE(w.assign_component<position_c>(e1));
-            REQUIRE(w.assign_component<velocity_c>(e1));
+            w.assign_component<position_c>(e1);
+            w.assign_component<velocity_c>(e1);
 
-            REQUIRE(w.assign_component<position_c>(e2));
-            REQUIRE(w.assign_component<velocity_c>(e2));
+            w.assign_component<position_c>(e2);
+            w.assign_component<velocity_c>(e2);
 
             REQUIRE(w.destroy_entity(e1));
 
-            REQUIRE_FALSE(w.exists_component<position_c>(e1));
-            REQUIRE_FALSE(w.exists_component<velocity_c>(e1));
-
             REQUIRE(w.exists_component<position_c>(e2));
             REQUIRE(w.exists_component<velocity_c>(e2));
-        }
-        {
-            ecs::registry w;
-            auto e1 = w.create_entity();
-            REQUIRE(e1.destroy());
-            REQUIRE_FALSE(e1.assign_component<position_c>());
-            REQUIRE_FALSE(w.exists_component<position_c>(e1));
         }
         {
             ecs::registry w;
@@ -597,10 +581,13 @@ TEST_CASE("registry") {
             auto e1 = w.create_entity();
             auto e2 = w.create_entity();
 
-            REQUIRE(w.assign_component<position_c>(e1));
+            const position_c& e1_pos = w.assign_component<position_c>(e1);
+            REQUIRE(&e1_pos == &w.get_component<position_c>(e1));
 
-            REQUIRE(w.assign_component<position_c>(e2));
-            REQUIRE(w.assign_component<velocity_c>(e2));
+            const position_c& e2_pos = w.assign_component<position_c>(e2);
+            const velocity_c& e2_vel = w.assign_component<velocity_c>(e2);
+            REQUIRE(&e2_pos == &w.get_component<position_c>(e2));
+            REQUIRE(&e2_vel == &w.get_component<velocity_c>(e2));
 
             REQUIRE(e1.destroy());
         }
@@ -758,21 +745,6 @@ TEST_CASE("registry") {
             REQUIRE(e3.exists_component<position_c>());
             REQUIRE_FALSE(e3.exists_component<velocity_c>());
             REQUIRE(e3.get_component<position_c>() == position_c(1, 2));
-        }
-        {
-            ecs::registry w;
-
-            auto e1 = w.create_entity();
-            ecs::entity_filler(e1)
-                .component<position_c>(1, 2)
-                .component<velocity_c>(3, 4);
-            e1.destroy();
-
-            auto e2 = e1.clone();
-            REQUIRE_FALSE(e2.exists_component<position_c>());
-            REQUIRE_FALSE(e2.exists_component<velocity_c>());
-            REQUIRE(w.component_count<position_c>() == 0);
-            REQUIRE(w.component_count<velocity_c>() == 0);
         }
     }
     SECTION("for_each_entity") {
