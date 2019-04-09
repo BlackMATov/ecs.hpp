@@ -321,16 +321,19 @@ namespace ecs_hpp
                 return insert(T(std::forward<Args>(args)...));
             }
 
-            bool unordered_erase(const T& v)
-                noexcept(std::is_nothrow_move_assignable<T>::value)
+            bool unordered_erase(const T& v) noexcept(
+                noexcept(indexer_(std::declval<T>())) &&
+                std::is_nothrow_move_assignable<T>::value)
             {
                 if ( !has(v) ) {
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
                 const std::size_t dense_index = sparse_[vi];
-                dense_[dense_index] = std::move(dense_.back());
-                sparse_[indexer_(dense_[dense_index])] = dense_index;
+                if ( dense_index != dense_.size() - 1 ) {
+                    dense_[dense_index] = std::move(dense_.back());
+                    sparse_[indexer_(dense_[dense_index])] = dense_index;
+                }
                 dense_.pop_back();
                 return true;
             }
@@ -339,17 +342,20 @@ namespace ecs_hpp
                 dense_.clear();
             }
 
-            bool has(const T& v) const noexcept {
+            bool has(const T& v) const noexcept(
+                noexcept(indexer_(std::declval<T>())))
+            {
                 const std::size_t vi = indexer_(v);
                 return vi < sparse_.size()
                     && sparse_[vi] < dense_.size()
                     && dense_[sparse_[vi]] == v;
             }
 
-            const_iterator find(const T& v) const noexcept {
-                const std::size_t vi = indexer_(v);
+            const_iterator find(const T& v) const noexcept(
+                noexcept(indexer_(std::declval<T>())))
+            {
                 return has(v)
-                    ? begin() + sparse_[vi]
+                    ? begin() + sparse_[indexer_(v)]
                     : end();
             }
 
@@ -361,7 +367,9 @@ namespace ecs_hpp
                 throw std::logic_error("ecs_hpp::sparse_set (value not found)");
             }
 
-            std::pair<std::size_t,bool> find_dense_index(const T& v) const noexcept {
+            std::pair<std::size_t,bool> find_dense_index(const T& v) const noexcept(
+                noexcept(indexer_(std::declval<T>())))
+            {
                 return has(v)
                     ? std::make_pair(sparse_[indexer_(v)], true)
                     : std::make_pair(std::size_t(-1), false);
@@ -438,57 +446,59 @@ namespace ecs_hpp
             sparse_map(const Indexer& indexer = Indexer())
             : keys_(indexer) {}
 
-            bool insert(const K& k, const T& v) {
+            template < typename UK, typename UT >
+            bool insert(UK&& k, UT&& v) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
-                values_.push_back(v);
+                values_.push_back(std::forward<UT>(v));
                 try {
-                    return keys_.insert(k);
+                    return keys_.insert(std::forward<UK>(k));
                 } catch (...) {
                     values_.pop_back();
                     throw;
                 }
             }
 
-            bool insert(const K& k, T&& v) {
-                if ( keys_.has(k) ) {
-                    return false;
-                }
-                values_.push_back(std::move(v));
-                try {
-                    return keys_.insert(k);
-                } catch (...) {
-                    values_.pop_back();
-                    throw;
-                }
-            }
-
-            template < typename... Args >
-            bool emplace(const K& k, Args&&... args) {
+            template < typename UK, typename... Args >
+            bool emplace(UK&& k, Args&&... args) {
                 if ( keys_.has(k) ) {
                     return false;
                 }
                 values_.emplace_back(std::forward<Args>(args)...);
                 try {
-                    return keys_.insert(k);
+                    return keys_.insert(std::forward<UK>(k));
                 } catch (...) {
                     values_.pop_back();
                     throw;
                 }
             }
 
-            std::enable_if_t<
-                std::is_nothrow_move_assignable<K>::value,
-                bool>
-            unordered_erase(const K& k)
-                noexcept(std::is_nothrow_move_assignable<T>::value)
+            template < typename UK, typename UT >
+            bool insert_or_assign(UK&& k, UT&& v) {
+                if ( keys_.has(k) ) {
+                    get(k) = std::forward<UT>(v);
+                    return false;
+                } else {
+                    insert(std::forward<UK>(k), std::forward<UT>(v));
+                    return true;
+                }
+            }
+
+            bool unordered_erase(const K& k) noexcept(
+                noexcept(keys_.find_dense_index(k)) &&
+                std::is_nothrow_move_assignable<T>::value)
             {
-                if ( !keys_.has(k) ) {
+                static_assert(
+                    noexcept(keys_.unordered_erase(k)),
+                    "unsupported with current key type");
+                const auto value_index_p = keys_.find_dense_index(k);
+                if ( !value_index_p.second ) {
                     return false;
                 }
-                const std::size_t value_index = keys_.get_dense_index(k);
-                values_[value_index] = std::move(values_.back());
+                if ( value_index_p.first != values_.size() - 1 ) {
+                    values_[value_index_p.first] = std::move(values_.back());
+                }
                 values_.pop_back();
                 keys_.unordered_erase(k);
                 return true;
@@ -499,7 +509,9 @@ namespace ecs_hpp
                 values_.clear();
             }
 
-            bool has(const K& k) const noexcept {
+            bool has(const K& k) const noexcept(
+                noexcept(keys_.has(k)))
+            {
                 return keys_.has(k);
             }
 
@@ -511,14 +523,18 @@ namespace ecs_hpp
                 return values_[keys_.get_dense_index(k)];
             }
 
-            T* find(const K& k) noexcept {
+            T* find(const K& k) noexcept(
+                noexcept(keys_.find_dense_index(k)))
+            {
                 const auto value_index_p = keys_.find_dense_index(k);
                 return value_index_p.second
                     ? &values_[value_index_p.first]
                     : nullptr;
             }
 
-            const T* find(const K& k) const noexcept {
+            const T* find(const K& k) const noexcept(
+                noexcept(keys_.find_dense_index(k)))
+            {
                 const auto value_index_p = keys_.find_dense_index(k);
                 return value_index_p.second
                     ? &values_[value_index_p.first]
@@ -606,9 +622,7 @@ namespace ecs_hpp
         template < typename T >
         template < typename... Args >
         void component_storage<T>::assign(entity_id id, Args&&... args) {
-            if ( !components_.emplace(id, std::forward<Args>(args)...) ) {
-                components_.get(id) = T(std::forward<Args>(args)...);
-            }
+            components_.insert_or_assign(id, T(std::forward<Args>(args)...));
         }
 
         template < typename T >

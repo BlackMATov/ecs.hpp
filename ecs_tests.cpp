@@ -280,6 +280,25 @@ TEST_CASE("detail") {
             REQUIRE(s.unordered_erase(position_c(1,2)));
             REQUIRE(s.get(position_c(3,4)).x == 3);
         }
+        {
+            struct obj_t {
+                int x;
+                obj_t(int nx) : x(nx) {}
+            };
+
+            sparse_map<unsigned, obj_t> m;
+            REQUIRE(m.insert_or_assign(42, obj_t(42)));
+            REQUIRE(m.has(42));
+            REQUIRE(m.get(42).x == 42);
+            REQUIRE_FALSE(m.insert_or_assign(42, obj_t(21)));
+            REQUIRE(m.has(42));
+            REQUIRE(m.get(42).x == 21);
+            REQUIRE(m.size() == 1);
+            REQUIRE(m.insert_or_assign(84, obj_t(84)));
+            REQUIRE(m.has(84));
+            REQUIRE(m.get(84).x == 84);
+            REQUIRE(m.size() == 2);
+        }
     }
 }
 
