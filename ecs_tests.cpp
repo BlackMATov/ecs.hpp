@@ -732,6 +732,49 @@ TEST_CASE("registry") {
             REQUIRE(e1.get_component<velocity_c>().y == 40);
         }
     }
+    SECTION("cloning") {
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            ecs::entity_filler(e1)
+                .component<position_c>(1, 2)
+                .component<velocity_c>(3, 4);
+
+            auto e2 = w.create_entity(e1);
+            REQUIRE(w.component_count<position_c>() == 2);
+            REQUIRE(w.component_count<velocity_c>() == 2);
+            REQUIRE(e2.exists_component<position_c>());
+            REQUIRE(e2.exists_component<velocity_c>());
+            REQUIRE(e2.get_component<position_c>() == position_c(1, 2));
+            REQUIRE(e2.get_component<velocity_c>() == velocity_c(3, 4));
+
+            e2.remove_component<velocity_c>();
+            auto e3 = e2.clone();
+
+            REQUIRE(w.component_count<position_c>() == 3);
+            REQUIRE(w.component_count<velocity_c>() == 1);
+
+            REQUIRE(e3.exists_component<position_c>());
+            REQUIRE_FALSE(e3.exists_component<velocity_c>());
+            REQUIRE(e3.get_component<position_c>() == position_c(1, 2));
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            ecs::entity_filler(e1)
+                .component<position_c>(1, 2)
+                .component<velocity_c>(3, 4);
+            e1.destroy();
+
+            auto e2 = e1.clone();
+            REQUIRE_FALSE(e2.exists_component<position_c>());
+            REQUIRE_FALSE(e2.exists_component<velocity_c>());
+            REQUIRE(w.component_count<position_c>() == 0);
+            REQUIRE(w.component_count<velocity_c>() == 0);
+        }
+    }
     SECTION("for_each_entity") {
         {
             ecs::registry w;

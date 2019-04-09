@@ -322,7 +322,7 @@ namespace ecs_hpp
             }
 
             bool unordered_erase(const T& v) noexcept(
-                noexcept(indexer_(std::declval<T>())) &&
+                noexcept(std::declval<Indexer>()(std::declval<T>())) &&
                 std::is_nothrow_move_assignable<T>::value)
             {
                 if ( !has(v) ) {
@@ -343,7 +343,7 @@ namespace ecs_hpp
             }
 
             bool has(const T& v) const noexcept(
-                noexcept(indexer_(std::declval<T>())))
+                noexcept(std::declval<Indexer>()(std::declval<T>())))
             {
                 const std::size_t vi = indexer_(v);
                 return vi < sparse_.size()
@@ -352,7 +352,7 @@ namespace ecs_hpp
             }
 
             const_iterator find(const T& v) const noexcept(
-                noexcept(indexer_(std::declval<T>())))
+                noexcept(std::declval<Indexer>()(std::declval<T>())))
             {
                 return has(v)
                     ? begin() + sparse_[indexer_(v)]
@@ -368,7 +368,7 @@ namespace ecs_hpp
             }
 
             std::pair<std::size_t,bool> find_dense_index(const T& v) const noexcept(
-                noexcept(indexer_(std::declval<T>())))
+                noexcept(std::declval<Indexer>()(std::declval<T>())))
             {
                 return has(v)
                     ? std::make_pair(sparse_[indexer_(v)], true)
@@ -486,7 +486,7 @@ namespace ecs_hpp
             }
 
             bool unordered_erase(const K& k) noexcept(
-                noexcept(keys_.find_dense_index(k)) &&
+                noexcept(std::declval<sparse_set<K, Indexer>>().find_dense_index(k)) &&
                 std::is_nothrow_move_assignable<T>::value)
             {
                 static_assert(
@@ -510,7 +510,7 @@ namespace ecs_hpp
             }
 
             bool has(const K& k) const noexcept(
-                noexcept(keys_.has(k)))
+                noexcept(std::declval<sparse_set<K, Indexer>>().has(k)))
             {
                 return keys_.has(k);
             }
@@ -524,7 +524,7 @@ namespace ecs_hpp
             }
 
             T* find(const K& k) noexcept(
-                noexcept(keys_.find_dense_index(k)))
+                noexcept(std::declval<sparse_set<K, Indexer>>().find_dense_index(k)))
             {
                 const auto value_index_p = keys_.find_dense_index(k);
                 return value_index_p.second
@@ -533,7 +533,7 @@ namespace ecs_hpp
             }
 
             const T* find(const K& k) const noexcept(
-                noexcept(keys_.find_dense_index(k)))
+                noexcept(std::declval<sparse_set<K, Indexer>>().find_dense_index(k)))
             {
                 const auto value_index_p = keys_.find_dense_index(k);
                 return value_index_p.second
@@ -588,6 +588,7 @@ namespace ecs_hpp
             virtual ~component_storage_base() = default;
             virtual bool remove(entity_id id) noexcept = 0;
             virtual bool has(entity_id id) const noexcept = 0;
+            virtual void clone(entity_id from, entity_id to) = 0;
         };
 
         template < typename T >
@@ -605,6 +606,7 @@ namespace ecs_hpp
 
             std::size_t count() const noexcept;
             bool has(entity_id id) const noexcept override;
+            void clone(entity_id from, entity_id to) override;
 
             template < typename F >
             void for_each_component(F&& f);
@@ -656,9 +658,17 @@ namespace ecs_hpp
         }
 
         template < typename T >
+        void component_storage<T>::clone(entity_id from, entity_id to) {
+            const T* c = components_.find(from);
+            if ( c ) {
+                components_.insert_or_assign(to, *c);
+            }
+        }
+
+        template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) {
-            for ( const auto id : components_ ) {
+            for ( const entity_id id : components_ ) {
                 f(id, components_.get(id));
             }
         }
@@ -666,7 +676,7 @@ namespace ecs_hpp
         template < typename T >
         template < typename F >
         void component_storage<T>::for_each_component(F&& f) const {
-            for ( const auto id : components_ ) {
+            for ( const entity_id id : components_ ) {
                 f(id, components_.get(id));
             }
         }
@@ -699,6 +709,7 @@ namespace ecs_hpp
 
         bool destroy();
         bool alive() const noexcept;
+        entity clone() const;
 
         template < typename T, typename... Args >
         bool assign_component(Args&&... args);
@@ -1032,6 +1043,7 @@ namespace ecs_hpp
         const_component<T> wrap_component(const const_uentity& ent) const noexcept;
 
         entity create_entity();
+        entity create_entity(const const_uentity& prototype);
 
         bool destroy_entity(const uentity& ent);
         bool alive_entity(const const_uentity& ent) const noexcept;
@@ -1242,6 +1254,10 @@ namespace ecs_hpp
 
     inline bool entity::alive() const noexcept {
         return detail::as_const(*owner_).alive_entity(id_);
+    }
+
+    inline entity entity::clone() const {
+        return (*owner_).create_entity(id_);
     }
 
     template < typename T, typename... Args >
@@ -1689,6 +1705,23 @@ namespace ecs_hpp
             return wrap_entity(++last_entity_id_);
         }
         throw std::logic_error("ecs_hpp::registry (entity index overlow)");
+    }
+
+    inline entity registry::create_entity(const const_uentity& prototype) {
+        assert(prototype.check_owner(this));
+        entity ent = create_entity();
+        if ( !alive_entity(prototype) ) {
+            return ent;
+        }
+        try {
+            for ( const auto family_id : storages_ ) {
+                storages_.get(family_id)->clone(prototype, ent.id());
+            }
+        } catch (...) {
+            destroy_entity(ent);
+            throw;
+        }
+        return ent;
     }
 
     inline bool registry::destroy_entity(const uentity& ent) {
