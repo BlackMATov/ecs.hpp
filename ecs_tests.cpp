@@ -411,6 +411,18 @@ TEST_CASE("registry") {
             // entity index overflow
             REQUIRE_THROWS_AS(w.create_entity(), std::logic_error);
         }
+        {
+            ecs::registry w;
+            REQUIRE_FALSE(w.entity_count());
+            auto e1 = w.create_entity();
+            REQUIRE(w.entity_count() == 1u);
+            auto e2 = w.create_entity();
+            REQUIRE(w.entity_count() == 2u);
+            e1.destroy();
+            REQUIRE(w.entity_count() == 1u);
+            e2.destroy();
+            REQUIRE_FALSE(w.entity_count());
+        }
     }
     SECTION("components") {
         {

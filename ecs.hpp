@@ -1086,6 +1086,7 @@ namespace ecs_hpp
 
         template < typename T >
         std::size_t component_count() const noexcept;
+        std::size_t entity_count() const noexcept;
         std::size_t entity_component_count(const const_uentity& ent) const noexcept;
 
         template < typename F >
@@ -1853,6 +1854,10 @@ namespace ecs_hpp
         return storage
             ? storage->count()
             : 0u;
+    }
+
+    inline std::size_t registry::entity_count() const noexcept {
+        return entity_ids_.size();
     }
 
     inline std::size_t registry::entity_component_count(const const_uentity& ent) const noexcept {
