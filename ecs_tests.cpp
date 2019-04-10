@@ -514,6 +514,92 @@ TEST_CASE("registry") {
             REQUIRE_FALSE(c1.remove());
         }
     }
+    SECTION("prototypes") {
+        {
+            ecs::prototype p;
+            p.assign_component<position_c>(1, 2);
+
+            ecs::registry w;
+            const auto e1 = p.create_entity(w);
+            const auto e2 = p.create_entity(w);
+
+            REQUIRE(w.entity_count() == 2u);
+            REQUIRE(w.component_count<position_c>() == 2u);
+            REQUIRE(w.component_count<velocity_c>() == 0u);
+
+            REQUIRE(e1.component_count() == 1u);
+            REQUIRE(e1.get_component<position_c>() == position_c(1,2));
+
+            REQUIRE(e2.component_count() == 1u);
+            REQUIRE(e2.get_component<position_c>() == position_c(1,2));
+        }
+        {
+            const auto p = ecs::prototype()
+                .assign_component<position_c>(1,2)
+                .assign_component<velocity_c>(3,4);
+
+            ecs::registry w;
+            const auto e1 = p.create_entity(w);
+            const auto e2 = p.create_entity(w);
+
+            REQUIRE(w.entity_count() == 2u);
+            REQUIRE(w.component_count<position_c>() == 2u);
+            REQUIRE(w.component_count<velocity_c>() == 2u);
+
+            REQUIRE(e1.component_count() == 2u);
+            REQUIRE(e1.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e1.get_component<velocity_c>() == velocity_c(3,4));
+
+            REQUIRE(e2.component_count() == 2u);
+            REQUIRE(e2.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e2.get_component<velocity_c>() == velocity_c(3,4));
+        }
+        {
+            const auto p1 = ecs::prototype()
+                .assign_component<position_c>(1,2)
+                .assign_component<velocity_c>(3,4);
+
+            ecs::prototype p2 = p1;
+            ecs::prototype p3;
+            p3 = p2;
+
+            ecs::registry w;
+            const auto e3 = p3.create_entity(w);
+            REQUIRE(e3.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e3.get_component<velocity_c>() == velocity_c(3,4));
+        }
+        {
+            const auto p1 = ecs::prototype()
+                .assign_component<position_c>(1,2)
+                .merge(ecs::prototype().assign_component<position_c>(3,4), false);
+
+            const auto p2 = ecs::prototype()
+                .assign_component<position_c>(1,2)
+                .merge(ecs::prototype().assign_component<position_c>(3,4), true);
+
+            const auto p3 = ecs::prototype()
+                .assign_component<position_c>(1,2)
+                .merge(ecs::prototype().assign_component<velocity_c>(3,4), false);
+
+            const auto p4 = ecs::prototype()
+                .assign_component<position_c>(1,2)
+                .merge(ecs::prototype().assign_component<velocity_c>(3,4), true);
+
+            ecs::registry w;
+
+            const auto e1 = p1.create_entity(w);
+            REQUIRE(e1.get_component<position_c>() == position_c(1,2));
+            const auto e2 = p2.create_entity(w);
+            REQUIRE(e2.get_component<position_c>() == position_c(3,4));
+
+            const auto e3 = p3.create_entity(w);
+            REQUIRE(e3.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e3.get_component<velocity_c>() == velocity_c(3,4));
+            const auto e4 = p4.create_entity(w);
+            REQUIRE(e4.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e4.get_component<velocity_c>() == velocity_c(3,4));
+        }
+    }
     SECTION("component_assigning") {
         {
             ecs::registry w;

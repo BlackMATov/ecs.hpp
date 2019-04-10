@@ -158,6 +158,26 @@ namespace ecs_hpp
         }
 
         //
+        // tiny_tuple_apply
+        //
+
+        namespace impl
+        {
+            template < typename F, typename Tuple, std::size_t... I >
+            void tiny_tuple_apply_impl(F&& f, Tuple&& args, std::index_sequence<I...>) {
+                std::forward<F>(f)(std::get<I>(std::forward<Tuple>(args))...);
+            }
+        }
+
+        template < typename F, typename Tuple >
+        void tiny_tuple_apply(F&& f, Tuple&& args) {
+            impl::tiny_tuple_apply_impl(
+                std::forward<F>(f),
+                std::forward<Tuple>(args),
+                std::make_index_sequence<std::tuple_size<std::decay_t<Tuple>>::value>());
+        }
+
+        //
         // next_capacity_size
         //
 
@@ -317,6 +337,18 @@ namespace ecs_hpp
             sparse_set(const Indexer& indexer = Indexer())
             : indexer_(indexer) {}
 
+            sparse_set(const sparse_set& other) = default;
+            sparse_set& operator=(const sparse_set& other) = default;
+
+            sparse_set(sparse_set&& other) noexcept = default;
+            sparse_set& operator=(sparse_set&& other) noexcept = default;
+
+            void swap(sparse_set& other) noexcept {
+                using std::swap;
+                swap(dense_, other.dense_);
+                swap(sparse_, other.sparse_);
+            }
+
             template < typename UT >
             bool insert(UT&& v) {
                 if ( has(v) ) {
@@ -394,6 +426,11 @@ namespace ecs_hpp
             std::vector<T> dense_;
             std::vector<std::size_t> sparse_;
         };
+
+        template < typename T, typename Indexer >
+        void swap(sparse_set<T,Indexer>& l, sparse_set<T,Indexer>& r) noexcept {
+            l.swap(r);
+        }
     }
 }
 
@@ -446,6 +483,18 @@ namespace ecs_hpp
         public:
             sparse_map(const Indexer& indexer = Indexer())
             : keys_(indexer) {}
+
+            sparse_map(const sparse_map& other) = default;
+            sparse_map& operator=(const sparse_map& other) = default;
+
+            sparse_map(sparse_map&& other) noexcept = default;
+            sparse_map& operator=(sparse_map&& other) noexcept = default;
+
+            void swap(sparse_map& other) noexcept {
+                using std::swap;
+                swap(keys_, other.keys_);
+                swap(values_, other.values_);
+            }
 
             template < typename UK, typename UT >
             bool insert(UK&& k, UT&& v) {
@@ -541,6 +590,11 @@ namespace ecs_hpp
             sparse_set<K, Indexer> keys_;
             std::vector<T> values_;
         };
+
+        template < typename K, typename T, typename Indexer >
+        void swap(sparse_map<K,T,Indexer>& l, sparse_map<K,T,Indexer>& r) noexcept {
+            l.swap(r);
+        }
     }
 }
 
@@ -950,6 +1004,72 @@ namespace std
             return std::hash<ecs_hpp::const_entity>()(comp.owner());
         }
     };
+}
+
+// -----------------------------------------------------------------------------
+//
+// prototype
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        class component_applier_base;
+        using component_applier_uptr = std::unique_ptr<component_applier_base>;
+
+        class component_applier_base {
+        public:
+            virtual ~component_applier_base() = default;
+            virtual component_applier_uptr clone() const = 0;
+            virtual void apply(entity& ent, bool override) const = 0;
+        };
+
+        template < typename T, typename... Args >
+        class component_applier final : public component_applier_base {
+        public:
+            component_applier(std::tuple<Args...>&& args);
+            component_applier(const std::tuple<Args...>& args);
+            component_applier_uptr clone() const override;
+            void apply(entity& ent, bool override) const override;
+        private:
+            std::tuple<Args...> args_;
+        };
+    }
+
+    class prototype final {
+    public:
+        prototype() = default;
+        ~prototype() noexcept = default;
+
+        prototype(const prototype& other);
+        prototype& operator=(const prototype& other);
+
+        prototype(prototype&& other) noexcept;
+        prototype& operator=(prototype&& other) noexcept;
+
+        void clear() noexcept;
+        bool empty() const noexcept;
+        void swap(prototype& other) noexcept;
+
+        template < typename T, typename... Args >
+        prototype& assign_component(Args&&... args) &;
+
+        template < typename T, typename... Args >
+        prototype&& assign_component(Args&&... args) &&;
+
+        prototype& merge(const prototype& other, bool override) &;
+        prototype&& merge(const prototype& other, bool override) &&;
+
+        entity create_entity(registry& owner) const;
+    private:
+        detail::sparse_map<
+            family_id,
+            detail::component_applier_uptr> appliers_;
+    };
+
+    void swap(prototype& l, prototype& r) noexcept;
 }
 
 // -----------------------------------------------------------------------------
@@ -1571,6 +1691,129 @@ namespace ecs_hpp
     template < typename T >
     bool operator!=(const const_component<T>& l, const const_component<T>& r) noexcept {
         return !(l == r);
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
+// prototype impl
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename T, typename... Args >
+        component_applier<T,Args...>::component_applier(std::tuple<Args...>&& args)
+        : args_(std::move(args)) {}
+
+        template < typename T, typename... Args >
+        component_applier<T,Args...>::component_applier(const std::tuple<Args...>& args)
+        : args_(args) {}
+
+        template < typename T, typename... Args >
+        component_applier_uptr component_applier<T,Args...>::clone() const {
+            return std::make_unique<component_applier>(args_);
+        }
+
+        template < typename T, typename... Args >
+        void component_applier<T,Args...>::apply(entity& ent, bool override) const {
+            detail::tiny_tuple_apply([&ent, override](const Args&... args){
+                if ( override || !ent.exists_component<T>() ) {
+                    ent.assign_component<T>(args...);
+                }
+            }, args_);
+        }
+    }
+
+    inline prototype::prototype(const prototype& other) {
+        for ( const family_id id : other.appliers_ ) {
+            appliers_.insert(id, other.appliers_.get(id)->clone());
+        }
+    }
+
+    inline prototype& prototype::operator=(const prototype& other) {
+        if ( this != &other ) {
+            prototype p(other);
+            swap(p);
+        }
+        return *this;
+    }
+
+    inline prototype::prototype(prototype&& other) noexcept
+    : appliers_(std::move(other.appliers_)) {}
+
+    inline prototype& prototype::operator=(prototype&& other) noexcept {
+        if ( this != &other ) {
+            swap(other);
+            other.clear();
+        }
+        return *this;
+    }
+
+    inline void prototype::clear() noexcept {
+        appliers_.clear();
+    }
+
+    inline bool prototype::empty() const noexcept {
+        return appliers_.empty();
+    }
+
+    inline void prototype::swap(prototype& other) noexcept {
+        using std::swap;
+        swap(appliers_, other.appliers_);
+    }
+
+    template < typename T, typename... Args >
+    prototype& prototype::assign_component(Args&&... args) & {
+        using applier_t = detail::component_applier<
+            T,
+            std::decay_t<Args>...>;
+        auto applier = std::make_unique<applier_t>(
+            std::make_tuple(std::forward<Args>(args)...));
+        const auto family = detail::type_family<T>::id();
+        appliers_.emplace(family, std::move(applier));
+        return *this;
+    }
+
+    template < typename T, typename... Args >
+    prototype&& prototype::assign_component(Args&&... args) && {
+        assign_component<T>(std::forward<Args>(args)...);
+        return std::move(*this);
+    }
+
+    prototype& prototype::merge(const prototype& other, bool override) & {
+        for ( const auto family_id : other.appliers_ ) {
+            if ( override || !appliers_.has(family_id) ) {
+                appliers_.insert_or_assign(
+                    family_id,
+                    other.appliers_.get(family_id)->clone());
+            }
+        }
+        return *this;
+    }
+
+    prototype&& prototype::merge(const prototype& other, bool override) && {
+        merge(other, override);
+        return std::move(*this);
+    }
+
+    inline entity prototype::create_entity(registry& owner) const {
+        auto ent = owner.create_entity();
+        try {
+            for ( const auto family_id : appliers_ ) {
+                appliers_.get(family_id)->apply(ent, true);
+            }
+        } catch (...) {
+            owner.destroy_entity(ent);
+            throw;
+        }
+        return ent;
+    }
+
+    inline void swap(prototype& l, prototype& r) noexcept {
+        l.swap(r);
     }
 }
 
