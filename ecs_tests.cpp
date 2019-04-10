@@ -405,11 +405,15 @@ TEST_CASE("registry") {
             ecs::registry w;
             using namespace ecs::detail;
 
+            std::vector<ecs::entity> entities;
             for ( std::size_t i = 0; i < entity_id_index_mask; ++i ) {
-                w.create_entity();
+                entities.push_back(w.create_entity());
             }
             // entity index overflow
             REQUIRE_THROWS_AS(w.create_entity(), std::logic_error);
+            for ( auto& ent : entities ) {
+                ent.destroy();
+            }
         }
         {
             ecs::registry w;

@@ -158,6 +158,24 @@ namespace ecs_hpp
         }
 
         //
+        // next_capacity_size
+        //
+
+        inline std::size_t next_capacity_size(
+            std::size_t cur_size,
+            std::size_t min_size,
+            std::size_t max_size)
+        {
+            if ( min_size > max_size ) {
+                throw std::length_error("ecs_hpp::next_capacity_size");
+            }
+            if ( cur_size >= max_size / 2u ) {
+                return max_size;
+            }
+            return std::max(cur_size * 2u, min_size);
+        }
+
+        //
         // entity_id index/version
         //
 
@@ -263,6 +281,15 @@ namespace ecs_hpp
             using iterator = typename std::vector<T>::iterator;
             using const_iterator = typename std::vector<T>::const_iterator;
         public:
+            static_assert(
+                noexcept(std::declval<Indexer>()(std::declval<T>())),
+                "unsupported sparse_set indexer");
+            static_assert(
+                std::is_nothrow_destructible<T>::value &&
+                std::is_nothrow_move_assignable<T>::value &&
+                noexcept(std::declval<T>() == std::declval<T>()),
+                "unsupported sparse_set value type");
+        public:
             iterator begin() noexcept {
                 return dense_.begin();
             }
@@ -290,28 +317,17 @@ namespace ecs_hpp
             sparse_set(const Indexer& indexer = Indexer())
             : indexer_(indexer) {}
 
-            bool insert(T&& v) {
+            template < typename UT >
+            bool insert(UT&& v) {
                 if ( has(v) ) {
                     return false;
                 }
                 const std::size_t vi = indexer_(v);
                 if ( vi >= sparse_.size() ) {
-                    sparse_.resize(new_sparse_size_for_(vi + 1u));
+                    sparse_.resize(next_capacity_size(
+                        sparse_.size(), vi + 1u, sparse_.max_size()));
                 }
-                dense_.push_back(std::move(v));
-                sparse_[vi] = dense_.size() - 1u;
-                return true;
-            }
-
-            bool insert(const T& v) {
-                if ( has(v) ) {
-                    return false;
-                }
-                const std::size_t vi = indexer_(v);
-                if ( vi >= sparse_.size() ) {
-                    sparse_.resize(new_sparse_size_for_(vi + 1u));
-                }
-                dense_.push_back(v);
+                dense_.push_back(std::forward<UT>(v));
                 sparse_[vi] = dense_.size() - 1u;
                 return true;
             }
@@ -321,10 +337,7 @@ namespace ecs_hpp
                 return insert(T(std::forward<Args>(args)...));
             }
 
-            bool unordered_erase(const T& v) noexcept(
-                noexcept(std::declval<Indexer>()(std::declval<T>())) &&
-                std::is_nothrow_move_assignable<T>::value)
-            {
+            bool unordered_erase(const T& v) noexcept {
                 if ( !has(v) ) {
                     return false;
                 }
@@ -342,18 +355,14 @@ namespace ecs_hpp
                 dense_.clear();
             }
 
-            bool has(const T& v) const noexcept(
-                noexcept(std::declval<Indexer>()(std::declval<T>())))
-            {
+            bool has(const T& v) const noexcept {
                 const std::size_t vi = indexer_(v);
                 return vi < sparse_.size()
                     && sparse_[vi] < dense_.size()
                     && dense_[sparse_[vi]] == v;
             }
 
-            const_iterator find(const T& v) const noexcept(
-                noexcept(std::declval<Indexer>()(std::declval<T>())))
-            {
+            const_iterator find(const T& v) const noexcept {
                 return has(v)
                     ? begin() + sparse_[indexer_(v)]
                     : end();
@@ -367,9 +376,7 @@ namespace ecs_hpp
                 throw std::logic_error("ecs_hpp::sparse_set (value not found)");
             }
 
-            std::pair<std::size_t,bool> find_dense_index(const T& v) const noexcept(
-                noexcept(std::declval<Indexer>()(std::declval<T>())))
-            {
+            std::pair<std::size_t,bool> find_dense_index(const T& v) const noexcept {
                 return has(v)
                     ? std::make_pair(sparse_[indexer_(v)], true)
                     : std::make_pair(std::size_t(-1), false);
@@ -381,17 +388,6 @@ namespace ecs_hpp
 
             std::size_t size() const noexcept {
                 return dense_.size();
-            }
-        private:
-            std::size_t new_sparse_size_for_(std::size_t nsize) const {
-                const std::size_t ms = sparse_.max_size();
-                if ( nsize > ms ) {
-                    throw std::length_error("ecs_hpp::sparse_set");
-                }
-                if ( sparse_.size() >= ms / 2u ) {
-                    return ms;
-                }
-                return std::max(sparse_.size() * 2u, nsize);
             }
         private:
             Indexer indexer_;
@@ -418,6 +414,11 @@ namespace ecs_hpp
         public:
             using iterator = typename std::vector<K>::iterator;
             using const_iterator = typename std::vector<K>::const_iterator;
+        public:
+            static_assert(
+                std::is_nothrow_destructible<T>::value &&
+                std::is_nothrow_move_assignable<T>::value,
+                "unsupported sparse_map value type");
         public:
             iterator begin() noexcept {
                 return keys_.begin();
@@ -485,13 +486,7 @@ namespace ecs_hpp
                 }
             }
 
-            bool unordered_erase(const K& k) noexcept(
-                noexcept(std::declval<sparse_set<K, Indexer>>().find_dense_index(k)) &&
-                std::is_nothrow_move_assignable<T>::value)
-            {
-                static_assert(
-                    noexcept(keys_.unordered_erase(k)),
-                    "unsupported with current key type");
+            bool unordered_erase(const K& k) noexcept {
                 const auto value_index_p = keys_.find_dense_index(k);
                 if ( !value_index_p.second ) {
                     return false;
@@ -509,9 +504,7 @@ namespace ecs_hpp
                 values_.clear();
             }
 
-            bool has(const K& k) const noexcept(
-                noexcept(std::declval<sparse_set<K, Indexer>>().has(k)))
-            {
+            bool has(const K& k) const noexcept {
                 return keys_.has(k);
             }
 
@@ -523,18 +516,14 @@ namespace ecs_hpp
                 return values_[keys_.get_dense_index(k)];
             }
 
-            T* find(const K& k) noexcept(
-                noexcept(std::declval<sparse_set<K, Indexer>>().find_dense_index(k)))
-            {
+            T* find(const K& k) noexcept {
                 const auto value_index_p = keys_.find_dense_index(k);
                 return value_index_p.second
                     ? &values_[value_index_p.first]
                     : nullptr;
             }
 
-            const T* find(const K& k) const noexcept(
-                noexcept(std::declval<sparse_set<K, Indexer>>().find_dense_index(k)))
-            {
+            const T* find(const K& k) const noexcept {
                 const auto value_index_p = keys_.find_dense_index(k);
                 return value_index_p.second
                     ? &values_[value_index_p.first]
@@ -708,8 +697,8 @@ namespace ecs_hpp
 
         entity_id id() const noexcept;
 
-        bool destroy();
         entity clone() const;
+        bool destroy() noexcept;
         bool valid() const noexcept;
 
         template < typename T, typename... Args >
@@ -1050,7 +1039,7 @@ namespace ecs_hpp
         entity create_entity();
         entity create_entity(const const_uentity& prototype);
 
-        bool destroy_entity(const uentity& ent);
+        bool destroy_entity(const uentity& ent) noexcept;
         bool valid_entity(const const_uentity& ent) const noexcept;
 
         template < typename T, typename... Args >
@@ -1253,12 +1242,12 @@ namespace ecs_hpp
         return id_;
     }
 
-    inline bool entity::destroy() {
-        return (*owner_).destroy_entity(id_);
-    }
-
     inline entity entity::clone() const {
         return (*owner_).create_entity(id_);
+    }
+
+    inline bool entity::destroy() noexcept {
+        return (*owner_).destroy_entity(id_);
     }
 
     inline bool entity::valid() const noexcept {
@@ -1713,11 +1702,18 @@ namespace ecs_hpp
             return wrap_entity(new_ent_id);
 
         }
-        if ( last_entity_id_ < detail::entity_id_index_mask ) {
-            entity_ids_.insert(last_entity_id_ + 1);
-            return wrap_entity(++last_entity_id_);
+        if ( last_entity_id_ >= detail::entity_id_index_mask ) {
+            throw std::logic_error("ecs_hpp::registry (entity index overlow)");
         }
-        throw std::logic_error("ecs_hpp::registry (entity index overlow)");
+        if ( free_entity_ids_.capacity() <= entity_ids_.size() ) {
+            // ensure free entity ids capacity for safe (noexcept) entity destroying
+            free_entity_ids_.reserve(detail::next_capacity_size(
+                free_entity_ids_.capacity(),
+                entity_ids_.size() + 1,
+                free_entity_ids_.max_size()));
+        }
+        entity_ids_.insert(last_entity_id_ + 1);
+        return wrap_entity(++last_entity_id_);
     }
 
     inline entity registry::create_entity(const const_uentity& prototype) {
@@ -1734,10 +1730,11 @@ namespace ecs_hpp
         return ent;
     }
 
-    inline bool registry::destroy_entity(const uentity& ent) {
+    inline bool registry::destroy_entity(const uentity& ent) noexcept {
         assert(valid_entity(ent));
         remove_all_components(ent);
         if ( entity_ids_.unordered_erase(ent) ) {
+            assert(free_entity_ids_.size() < free_entity_ids_.capacity());
             free_entity_ids_.push_back(ent);
             return true;
         }
