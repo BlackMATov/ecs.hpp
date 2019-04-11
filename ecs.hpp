@@ -37,8 +37,13 @@ namespace ecs_hpp
     template < typename T >
     class const_component;
 
+    class prototype;
+
     class system;
     class registry;
+
+    class entity_filler;
+    class registry_filler;
 
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
@@ -427,8 +432,12 @@ namespace ecs_hpp
             std::vector<std::size_t> sparse_;
         };
 
-        template < typename T, typename Indexer >
-        void swap(sparse_set<T,Indexer>& l, sparse_set<T,Indexer>& r) noexcept {
+        template < typename T
+                 , typename Indexer >
+        void swap(
+            sparse_set<T, Indexer>& l,
+            sparse_set<T, Indexer>& r) noexcept
+        {
             l.swap(r);
         }
     }
@@ -591,8 +600,13 @@ namespace ecs_hpp
             std::vector<T> values_;
         };
 
-        template < typename K, typename T, typename Indexer >
-        void swap(sparse_map<K,T,Indexer>& l, sparse_map<K,T,Indexer>& r) noexcept {
+        template < typename K
+                 , typename T
+                 , typename Indexer >
+        void swap(
+            sparse_map<K, T, Indexer>& l,
+            sparse_map<K, T, Indexer>& r) noexcept
+        {
             l.swap(r);
         }
     }
@@ -752,7 +766,7 @@ namespace ecs_hpp
         entity_id id() const noexcept;
 
         entity clone() const;
-        bool destroy() noexcept;
+        void destroy() noexcept;
         bool valid() const noexcept;
 
         template < typename T, typename... Args >
@@ -1055,14 +1069,13 @@ namespace ecs_hpp
 
         template < typename T, typename... Args >
         prototype& assign_component(Args&&... args) &;
-
         template < typename T, typename... Args >
         prototype&& assign_component(Args&&... args) &&;
 
         prototype& merge(const prototype& other, bool override) &;
         prototype&& merge(const prototype& other, bool override) &&;
 
-        entity create_entity(registry& owner) const;
+        void apply(entity& ent, bool override) const;
     private:
         detail::sparse_map<
             family_id,
@@ -1157,9 +1170,10 @@ namespace ecs_hpp
         const_component<T> wrap_component(const const_uentity& ent) const noexcept;
 
         entity create_entity();
-        entity create_entity(const const_uentity& prototype);
+        entity create_entity(const prototype& proto);
+        entity create_entity(const const_uentity& proto);
 
-        bool destroy_entity(const uentity& ent) noexcept;
+        void destroy_entity(const uentity& ent) noexcept;
         bool valid_entity(const const_uentity& ent) const noexcept;
 
         template < typename T, typename... Args >
@@ -1366,8 +1380,8 @@ namespace ecs_hpp
         return (*owner_).create_entity(id_);
     }
 
-    inline bool entity::destroy() noexcept {
-        return (*owner_).destroy_entity(id_);
+    inline void entity::destroy() noexcept {
+        (*owner_).destroy_entity(id_);
     }
 
     inline bool entity::valid() const noexcept {
@@ -1799,17 +1813,10 @@ namespace ecs_hpp
         return std::move(*this);
     }
 
-    inline entity prototype::create_entity(registry& owner) const {
-        auto ent = owner.create_entity();
-        try {
-            for ( const auto family_id : appliers_ ) {
-                appliers_.get(family_id)->apply(ent, true);
-            }
-        } catch (...) {
-            owner.destroy_entity(ent);
-            throw;
+    inline void prototype::apply(entity& ent, bool override) const {
+        for ( const auto family_id : appliers_ ) {
+            appliers_.get(family_id)->apply(ent, override);
         }
-        return ent;
     }
 
     inline void swap(prototype& l, prototype& r) noexcept {
@@ -1959,12 +1966,23 @@ namespace ecs_hpp
         return wrap_entity(++last_entity_id_);
     }
 
-    inline entity registry::create_entity(const const_uentity& prototype) {
-        assert(valid_entity(prototype));
+    inline entity registry::create_entity(const prototype& proto) {
+        auto ent = create_entity();
+        try {
+            proto.apply(ent, true);
+        } catch (...) {
+            destroy_entity(ent);
+            throw;
+        }
+        return ent;
+    }
+
+    inline entity registry::create_entity(const const_uentity& proto) {
+        assert(valid_entity(proto));
         entity ent = create_entity();
         try {
             for ( const auto family_id : storages_ ) {
-                storages_.get(family_id)->clone(prototype, ent.id());
+                storages_.get(family_id)->clone(proto, ent.id());
             }
         } catch (...) {
             destroy_entity(ent);
@@ -1973,15 +1991,13 @@ namespace ecs_hpp
         return ent;
     }
 
-    inline bool registry::destroy_entity(const uentity& ent) noexcept {
+    inline void registry::destroy_entity(const uentity& ent) noexcept {
         assert(valid_entity(ent));
         remove_all_components(ent);
         if ( entity_ids_.unordered_erase(ent) ) {
             assert(free_entity_ids_.size() < free_entity_ids_.capacity());
             free_entity_ids_.push_back(ent);
-            return true;
         }
-        return false;
     }
 
     inline bool registry::valid_entity(const const_uentity& ent) const noexcept {

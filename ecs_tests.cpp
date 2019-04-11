@@ -118,6 +118,7 @@ TEST_CASE("detail") {
             REQUIRE_THROWS(s.get_dense_index(42u));
 
             REQUIRE(s.insert(42u));
+            REQUIRE_FALSE(s.insert(42u));
 
             REQUIRE_FALSE(s.empty());
             REQUIRE(s.size() == 1u);
@@ -355,15 +356,15 @@ TEST_CASE("registry") {
             REQUIRE(w.valid_entity(e3));
             REQUIRE(w.valid_entity(ee3));
 
-            REQUIRE(w.destroy_entity(e1));
+            w.destroy_entity(e1);
             REQUIRE_FALSE(w.valid_entity(e1));
             REQUIRE(w.valid_entity(e2));
 
-            REQUIRE(w.destroy_entity(e2));
+            w.destroy_entity(e2);
             REQUIRE_FALSE(w.valid_entity(e1));
             REQUIRE_FALSE(w.valid_entity(e2));
 
-            REQUIRE(w.destroy_entity(ee3));
+            w.destroy_entity(ee3);
             REQUIRE_FALSE(w.valid_entity(e3));
             REQUIRE_FALSE(w.valid_entity(ee3));
         }
@@ -520,8 +521,8 @@ TEST_CASE("registry") {
             p.assign_component<position_c>(1, 2);
 
             ecs::registry w;
-            const auto e1 = p.create_entity(w);
-            const auto e2 = p.create_entity(w);
+            const auto e1 = w.create_entity(p);
+            const auto e2 = w.create_entity(p);
 
             REQUIRE(w.entity_count() == 2u);
             REQUIRE(w.component_count<position_c>() == 2u);
@@ -539,8 +540,8 @@ TEST_CASE("registry") {
                 .assign_component<velocity_c>(3,4);
 
             ecs::registry w;
-            const auto e1 = p.create_entity(w);
-            const auto e2 = p.create_entity(w);
+            const auto e1 = w.create_entity(p);
+            const auto e2 = w.create_entity(p);
 
             REQUIRE(w.entity_count() == 2u);
             REQUIRE(w.component_count<position_c>() == 2u);
@@ -564,7 +565,7 @@ TEST_CASE("registry") {
             p3 = p2;
 
             ecs::registry w;
-            const auto e3 = p3.create_entity(w);
+            const auto e3 = w.create_entity(p3);
             REQUIRE(e3.get_component<position_c>() == position_c(1,2));
             REQUIRE(e3.get_component<velocity_c>() == velocity_c(3,4));
         }
@@ -587,15 +588,15 @@ TEST_CASE("registry") {
 
             ecs::registry w;
 
-            const auto e1 = p1.create_entity(w);
+            const auto e1 = w.create_entity(p1);
             REQUIRE(e1.get_component<position_c>() == position_c(1,2));
-            const auto e2 = p2.create_entity(w);
+            const auto e2 = w.create_entity(p2);
             REQUIRE(e2.get_component<position_c>() == position_c(3,4));
 
-            const auto e3 = p3.create_entity(w);
+            const auto e3 = w.create_entity(p3);
             REQUIRE(e3.get_component<position_c>() == position_c(1,2));
             REQUIRE(e3.get_component<velocity_c>() == velocity_c(3,4));
-            const auto e4 = p4.create_entity(w);
+            const auto e4 = w.create_entity(p4);
             REQUIRE(e4.get_component<position_c>() == position_c(1,2));
             REQUIRE(e4.get_component<velocity_c>() == velocity_c(3,4));
         }
@@ -654,7 +655,7 @@ TEST_CASE("registry") {
                 REQUIRE(e1.exists_component<position_c>());
                 REQUIRE(e1.exists_component<velocity_c>());
 
-                REQUIRE(e1.destroy());
+                e1.destroy();
 
                 REQUIRE_FALSE(w.component_count<position_c>());
                 REQUIRE_FALSE(w.component_count<velocity_c>());
@@ -672,7 +673,7 @@ TEST_CASE("registry") {
             w.assign_component<position_c>(e2);
             w.assign_component<velocity_c>(e2);
 
-            REQUIRE(w.destroy_entity(e1));
+            w.destroy_entity(e1);
 
             REQUIRE(w.exists_component<position_c>(e2));
             REQUIRE(w.exists_component<velocity_c>(e2));
@@ -691,7 +692,7 @@ TEST_CASE("registry") {
             REQUIRE(&e2_pos == &w.get_component<position_c>(e2));
             REQUIRE(&e2_vel == &w.get_component<velocity_c>(e2));
 
-            REQUIRE(e1.destroy());
+            e1.destroy();
         }
     }
     SECTION("component_accessing") {
