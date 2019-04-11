@@ -1797,7 +1797,7 @@ namespace ecs_hpp
         return std::move(*this);
     }
 
-    prototype& prototype::merge(const prototype& other, bool override) & {
+    inline prototype& prototype::merge(const prototype& other, bool override) & {
         for ( const auto family_id : other.appliers_ ) {
             if ( override || !appliers_.has(family_id) ) {
                 appliers_.insert_or_assign(
@@ -1808,7 +1808,7 @@ namespace ecs_hpp
         return *this;
     }
 
-    prototype&& prototype::merge(const prototype& other, bool override) && {
+    inline prototype&& prototype::merge(const prototype& other, bool override) && {
         merge(other, override);
         return std::move(*this);
     }
