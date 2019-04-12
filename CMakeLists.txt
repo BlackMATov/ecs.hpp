@@ -39,5 +39,13 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO)
 
+target_compile_options(${PROJECT_NAME}
+    PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:
+        /W4>
+    PRIVATE
+    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:
+        -Wall -Wextra -Wpedantic>)
+
 enable_testing()
 add_test(${PROJECT_NAME} ${PROJECT_NAME})

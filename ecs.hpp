@@ -731,7 +731,7 @@ namespace ecs_hpp
             : owner_(owner) {}
 
             template < typename... Args >
-            T& assign(entity_id id, Args&&... args) {
+            T& assign(entity_id id, Args&&...) {
                 components_.insert(id);
                 return empty_value_;
             }
