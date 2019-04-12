@@ -522,7 +522,7 @@ TEST_CASE("registry") {
     SECTION("prototypes") {
         {
             ecs::prototype p;
-            p.assign_component<position_c>(1, 2);
+            p.component<position_c>(1, 2);
 
             ecs::registry w;
             const auto e1 = w.create_entity(p);
@@ -540,8 +540,8 @@ TEST_CASE("registry") {
         }
         {
             const auto p = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .assign_component<velocity_c>(3,4);
+                .component<position_c>(1,2)
+                .component<velocity_c>(3,4);
 
             ecs::registry w;
             const auto e1 = w.create_entity(p);
@@ -561,8 +561,8 @@ TEST_CASE("registry") {
         }
         {
             const auto p1 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .assign_component<velocity_c>(3,4);
+                .component<position_c>(1,2)
+                .component<velocity_c>(3,4);
 
             ecs::prototype p2 = p1;
             ecs::prototype p3;
@@ -575,20 +575,20 @@ TEST_CASE("registry") {
         }
         {
             const auto p1 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<position_c>(3,4), false);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<position_c>(3,4), false);
 
             const auto p2 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<position_c>(3,4), true);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<position_c>(3,4), true);
 
             const auto p3 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<velocity_c>(3,4), false);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<velocity_c>(3,4), false);
 
             const auto p4 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<velocity_c>(3,4), true);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<velocity_c>(3,4), true);
 
             ecs::registry w;
 

@@ -1094,7 +1094,7 @@ namespace ecs_hpp
         public:
             virtual ~component_applier_base() = default;
             virtual component_applier_uptr clone() const = 0;
-            virtual void apply(entity& ent, bool override) const = 0;
+            virtual void apply_to(entity& ent, bool override) const = 0;
         };
 
         template < typename T, typename... Args >
@@ -1103,7 +1103,7 @@ namespace ecs_hpp
             component_applier(std::tuple<Args...>&& args);
             component_applier(const std::tuple<Args...>& args);
             component_applier_uptr clone() const override;
-            void apply(entity& ent, bool override) const override;
+            void apply_to(entity& ent, bool override) const override;
         private:
             std::tuple<Args...> args_;
         };
@@ -1124,15 +1124,18 @@ namespace ecs_hpp
         bool empty() const noexcept;
         void swap(prototype& other) noexcept;
 
-        template < typename T, typename... Args >
-        prototype& assign_component(Args&&... args) &;
-        template < typename T, typename... Args >
-        prototype&& assign_component(Args&&... args) &&;
+        template < typename T >
+        bool has_component() const noexcept;
 
-        prototype& merge(const prototype& other, bool override) &;
-        prototype&& merge(const prototype& other, bool override) &&;
+        template < typename T, typename... Args >
+        prototype& component(Args&&... args) &;
+        template < typename T, typename... Args >
+        prototype&& component(Args&&... args) &&;
 
-        void apply(entity& ent, bool override) const;
+        prototype& merge_with(const prototype& other, bool override) &;
+        prototype&& merge_with(const prototype& other, bool override) &&;
+
+        void apply_to(entity& ent, bool override) const;
     private:
         detail::sparse_map<
             family_id,
@@ -1798,7 +1801,7 @@ namespace ecs_hpp
         }
 
         template < typename T, typename... Args >
-        void component_applier<T,Args...>::apply(entity& ent, bool override) const {
+        void component_applier<T,Args...>::apply_to(entity& ent, bool override) const {
             detail::tiny_tuple_apply([&ent, override](const Args&... args){
                 if ( override || !ent.exists_component<T>() ) {
                     ent.assign_component<T>(args...);
@@ -1845,8 +1848,14 @@ namespace ecs_hpp
         swap(appliers_, other.appliers_);
     }
 
+    template < typename T >
+    bool prototype::has_component() const noexcept {
+        const auto family = detail::type_family<T>::id();
+        return appliers_.has(family);
+    }
+
     template < typename T, typename... Args >
-    prototype& prototype::assign_component(Args&&... args) & {
+    prototype& prototype::component(Args&&... args) & {
         using applier_t = detail::component_applier<
             T,
             std::decay_t<Args>...>;
@@ -1858,12 +1867,12 @@ namespace ecs_hpp
     }
 
     template < typename T, typename... Args >
-    prototype&& prototype::assign_component(Args&&... args) && {
-        assign_component<T>(std::forward<Args>(args)...);
+    prototype&& prototype::component(Args&&... args) && {
+        component<T>(std::forward<Args>(args)...);
         return std::move(*this);
     }
 
-    inline prototype& prototype::merge(const prototype& other, bool override) & {
+    inline prototype& prototype::merge_with(const prototype& other, bool override) & {
         for ( const auto family_id : other.appliers_ ) {
             if ( override || !appliers_.has(family_id) ) {
                 appliers_.insert_or_assign(
@@ -1874,14 +1883,14 @@ namespace ecs_hpp
         return *this;
     }
 
-    inline prototype&& prototype::merge(const prototype& other, bool override) && {
-        merge(other, override);
+    inline prototype&& prototype::merge_with(const prototype& other, bool override) && {
+        merge_with(other, override);
         return std::move(*this);
     }
 
-    inline void prototype::apply(entity& ent, bool override) const {
+    inline void prototype::apply_to(entity& ent, bool override) const {
         for ( const auto family_id : appliers_ ) {
-            appliers_.get(family_id)->apply(ent, override);
+            appliers_.get(family_id)->apply_to(ent, override);
         }
     }
 
@@ -2035,7 +2044,7 @@ namespace ecs_hpp
     inline entity registry::create_entity(const prototype& proto) {
         auto ent = create_entity();
         try {
-            proto.apply(ent, true);
+            proto.apply_to(ent, true);
         } catch (...) {
             destroy_entity(ent);
             throw;
