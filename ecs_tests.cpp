@@ -28,6 +28,10 @@ namespace
         velocity_c(int nx, int ny) : x(nx), y(ny) {}
     };
 
+    struct movable_c {
+    };
+    static_assert(std::is_empty<movable_c>::value, "!!!");
+
     bool operator==(const position_c& l, const position_c& r) noexcept {
         return l.x == r.x
             && l.y == r.y;
@@ -1226,6 +1230,29 @@ TEST_CASE("registry") {
                 3 * sizeof(std::size_t) +
                 1 * sizeof(ecs::entity_id));
         }
+        {
+            ecs::registry w;
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+            e1.assign_component<movable_c>();
+            e2.assign_component<movable_c>();
+            REQUIRE(w.component_memory_usage<movable_c>() ==
+                4 * sizeof(std::size_t) +
+                2 * sizeof(ecs::entity_id));
+        }
+    }
+    SECTION("empty_component") {
+        ecs::registry w;
+        auto e1 = w.create_entity();
+        ecs::entity_filler(e1)
+            .component<movable_c>()
+            .component<position_c>(1, 2)
+            .component<velocity_c>(3, 4);
+        REQUIRE(w.exists_component<movable_c>(e1));
+        REQUIRE(w.find_component<movable_c>(e1));
+        w.for_joined_components<movable_c, position_c>([
+        ](const ecs::const_entity&, movable_c&, position_c&){
+        });
     }
 }
 

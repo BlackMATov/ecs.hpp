@@ -659,103 +659,142 @@ namespace ecs_hpp
             virtual std::size_t memory_usage() const noexcept = 0;
         };
 
-        template < typename T >
+        template < typename T, bool E = std::is_empty<T>::value >
         class component_storage final : public component_storage_base {
         public:
-            component_storage(registry& owner);
+            component_storage(registry& owner)
+            : owner_(owner) {}
 
             template < typename... Args >
-            T& assign(entity_id id, Args&&... args);
-            bool exists(entity_id id) const noexcept;
-            bool remove(entity_id id) noexcept override;
+            T& assign(entity_id id, Args&&... args) {
+                components_.insert_or_assign(id, T(std::forward<Args>(args)...));
+                return components_.get(id);
+            }
 
-            T* find(entity_id id) noexcept;
-            const T* find(entity_id id) const noexcept;
+            bool exists(entity_id id) const noexcept {
+                return components_.has(id);
+            }
 
-            std::size_t count() const noexcept;
-            bool has(entity_id id) const noexcept override;
-            void clone(entity_id from, entity_id to) override;
+            bool remove(entity_id id) noexcept override {
+                return components_.unordered_erase(id);
+            }
+
+            T* find(entity_id id) noexcept {
+                return components_.find(id);
+            }
+
+            const T* find(entity_id id) const noexcept {
+                return components_.find(id);
+            }
+
+            std::size_t count() const noexcept {
+                return components_.size();
+            }
+
+            bool has(entity_id id) const noexcept override {
+                return components_.has(id);
+            }
+
+            void clone(entity_id from, entity_id to) override {
+                const T* c = components_.find(from);
+                if ( c ) {
+                    components_.insert_or_assign(to, *c);
+                }
+            }
 
             template < typename F >
-            void for_each_component(F&& f);
-            template < typename F >
-            void for_each_component(F&& f) const;
+            void for_each_component(F&& f) {
+                for ( const entity_id id : components_ ) {
+                    f(id, components_.get(id));
+                }
+            }
 
-            std::size_t memory_usage() const noexcept override;
+            template < typename F >
+            void for_each_component(F&& f) const {
+                for ( const entity_id id : components_ ) {
+                    f(id, components_.get(id));
+                }
+            }
+
+            std::size_t memory_usage() const noexcept override {
+                return components_.memory_usage();
+            }
         private:
             registry& owner_;
             detail::sparse_map<entity_id, T, entity_id_indexer> components_;
         };
 
         template < typename T >
-        component_storage<T>::component_storage(registry& owner)
-        : owner_(owner) {}
+        class component_storage<T, true> final : public component_storage_base {
+        public:
+            component_storage(registry& owner)
+            : owner_(owner) {}
 
-        template < typename T >
-        template < typename... Args >
-        T& component_storage<T>::assign(entity_id id, Args&&... args) {
-            components_.insert_or_assign(id, T(std::forward<Args>(args)...));
-            return components_.get(id);
-        }
-
-        template < typename T >
-        bool component_storage<T>::exists(entity_id id) const noexcept {
-            return components_.has(id);
-        }
-
-        template < typename T >
-        bool component_storage<T>::remove(entity_id id) noexcept {
-            return components_.unordered_erase(id);
-        }
-
-        template < typename T >
-        T* component_storage<T>::find(entity_id id) noexcept {
-            return components_.find(id);
-        }
-
-        template < typename T >
-        const T* component_storage<T>::find(entity_id id) const noexcept {
-            return components_.find(id);
-        }
-
-        template < typename T >
-        std::size_t component_storage<T>::count() const noexcept {
-            return components_.size();
-        }
-
-        template < typename T >
-        bool component_storage<T>::has(entity_id id) const noexcept {
-            return components_.has(id);
-        }
-
-        template < typename T >
-        void component_storage<T>::clone(entity_id from, entity_id to) {
-            const T* c = components_.find(from);
-            if ( c ) {
-                components_.insert_or_assign(to, *c);
+            template < typename... Args >
+            T& assign(entity_id id, Args&&... args) {
+                components_.insert(id);
+                return empty_value_;
             }
-        }
 
-        template < typename T >
-        template < typename F >
-        void component_storage<T>::for_each_component(F&& f) {
-            for ( const entity_id id : components_ ) {
-                f(id, components_.get(id));
+            bool exists(entity_id id) const noexcept {
+                return components_.has(id);
             }
-        }
 
-        template < typename T >
-        template < typename F >
-        void component_storage<T>::for_each_component(F&& f) const {
-            for ( const entity_id id : components_ ) {
-                f(id, components_.get(id));
+            bool remove(entity_id id) noexcept override {
+                return components_.unordered_erase(id);
             }
-        }
+
+            T* find(entity_id id) noexcept {
+                return components_.has(id)
+                    ? &empty_value_
+                    : nullptr;
+            }
+
+            const T* find(entity_id id) const noexcept {
+                return components_.has(id)
+                    ? &empty_value_
+                    : nullptr;
+            }
+
+            std::size_t count() const noexcept {
+                return components_.size();
+            }
+
+            bool has(entity_id id) const noexcept override {
+                return components_.has(id);
+            }
+
+            void clone(entity_id from, entity_id to) override {
+                if ( components_.has(from) ) {
+                    components_.insert(to);
+                }
+            }
+
+            template < typename F >
+            void for_each_component(F&& f) {
+                for ( const entity_id id : components_ ) {
+                    f(id, empty_value_);
+                }
+            }
+
+            template < typename F >
+            void for_each_component(F&& f) const {
+                for ( const entity_id id : components_ ) {
+                    f(id, empty_value_);
+                }
+            }
+
+            std::size_t memory_usage() const noexcept override {
+                return components_.memory_usage();
+            }
+        private:
+            registry& owner_;
+            static T empty_value_;
+            detail::sparse_set<entity_id, entity_id_indexer> components_;
+        };
 
         template < typename T >
-        std::size_t component_storage<T>::memory_usage() const noexcept {
-            return components_.memory_usage();
-        }
+        T component_storage<T, true>::empty_value_;
     }
 }
 
