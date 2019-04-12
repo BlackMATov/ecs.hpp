@@ -28,6 +28,10 @@ namespace
         velocity_c(int nx, int ny) : x(nx), y(ny) {}
     };
 
+    struct movable_c {
+    };
+    static_assert(std::is_empty<movable_c>::value, "!!!");
+
     bool operator==(const position_c& l, const position_c& r) noexcept {
         return l.x == r.x
             && l.y == r.y;
@@ -518,7 +522,7 @@ TEST_CASE("registry") {
     SECTION("prototypes") {
         {
             ecs::prototype p;
-            p.assign_component<position_c>(1, 2);
+            p.component<position_c>(1, 2);
 
             ecs::registry w;
             const auto e1 = w.create_entity(p);
@@ -536,8 +540,8 @@ TEST_CASE("registry") {
         }
         {
             const auto p = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .assign_component<velocity_c>(3,4);
+                .component<position_c>(1,2)
+                .component<velocity_c>(3,4);
 
             ecs::registry w;
             const auto e1 = w.create_entity(p);
@@ -557,8 +561,8 @@ TEST_CASE("registry") {
         }
         {
             const auto p1 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .assign_component<velocity_c>(3,4);
+                .component<position_c>(1,2)
+                .component<velocity_c>(3,4);
 
             ecs::prototype p2 = p1;
             ecs::prototype p3;
@@ -571,20 +575,20 @@ TEST_CASE("registry") {
         }
         {
             const auto p1 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<position_c>(3,4), false);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<position_c>(3,4), false);
 
             const auto p2 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<position_c>(3,4), true);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<position_c>(3,4), true);
 
             const auto p3 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<velocity_c>(3,4), false);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<velocity_c>(3,4), false);
 
             const auto p4 = ecs::prototype()
-                .assign_component<position_c>(1,2)
-                .merge(ecs::prototype().assign_component<velocity_c>(3,4), true);
+                .component<position_c>(1,2)
+                .merge_with(ecs::prototype().component<velocity_c>(3,4), true);
 
             ecs::registry w;
 
@@ -1153,6 +1157,102 @@ TEST_CASE("registry") {
             REQUIRE(e1.get_component<component_n>().i == 4);
             REQUIRE(e2.get_component<component_n>().i == 5);
         }
+    }
+    SECTION("memory_usage") {
+        {
+            ecs::registry w;
+            REQUIRE(w.memory_usage().entities == 0u);
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            const std::size_t expected_usage =
+                2 * sizeof(ecs::entity_id) + // vector free entity ids
+                4 * sizeof(std::size_t) +    // sparse entity ids (keys)
+                2 * sizeof(ecs::entity_id);  // sparse entity ids (values)
+            REQUIRE(w.memory_usage().entities == expected_usage);
+
+            e1.destroy();
+            e2.destroy();
+            REQUIRE(w.memory_usage().entities == expected_usage);
+
+            e1 = w.create_entity();
+            e2 = w.create_entity();
+            REQUIRE(w.memory_usage().entities == expected_usage);
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(1, 2);
+
+            auto e2 = w.create_entity();
+            e2.assign_component<position_c>(1, 2);
+
+            const std::size_t expected_usage =
+                2 * sizeof(position_c) +    // vector values
+                4 * sizeof(std::size_t) +   // sparse keys (keys)
+                2 * sizeof(ecs::entity_id); // sparse keys (values)
+            REQUIRE(w.memory_usage().components == expected_usage);
+
+            REQUIRE(w.component_memory_usage<position_c>() ==
+                2 * sizeof(position_c) +
+                4 * sizeof(std::size_t) +
+                2 * sizeof(ecs::entity_id));
+
+            REQUIRE_FALSE(w.component_memory_usage<velocity_c>());
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(1, 2);
+
+            auto e2 = w.create_entity();
+            e2.assign_component<velocity_c>(3, 4);
+
+            const std::size_t expected_usage =
+                sizeof(position_c) +
+                2 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id) +
+                sizeof(velocity_c) +
+                3 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id);
+            REQUIRE(w.memory_usage().components == expected_usage);
+
+            REQUIRE(w.component_memory_usage<position_c>() ==
+                sizeof(position_c) +
+                2 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id));
+
+            REQUIRE(w.component_memory_usage<velocity_c>() ==
+                sizeof(velocity_c) +
+                3 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id));
+        }
+        {
+            ecs::registry w;
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+            e1.assign_component<movable_c>();
+            e2.assign_component<movable_c>();
+            REQUIRE(w.component_memory_usage<movable_c>() ==
+                4 * sizeof(std::size_t) +
+                2 * sizeof(ecs::entity_id));
+        }
+    }
+    SECTION("empty_component") {
+        ecs::registry w;
+        auto e1 = w.create_entity();
+        ecs::entity_filler(e1)
+            .component<movable_c>()
+            .component<position_c>(1, 2)
+            .component<velocity_c>(3, 4);
+        REQUIRE(w.exists_component<movable_c>(e1));
+        REQUIRE(w.find_component<movable_c>(e1));
+        w.for_joined_components<movable_c, position_c>([
+        ](const ecs::const_entity&, movable_c&, position_c&){
+        });
     }
 }
 
