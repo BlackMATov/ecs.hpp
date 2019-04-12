@@ -426,6 +426,11 @@ namespace ecs_hpp
             std::size_t size() const noexcept {
                 return dense_.size();
             }
+
+            std::size_t memory_usage() const noexcept {
+                return dense_.capacity() * sizeof(dense_[0])
+                    + sparse_.capacity() * sizeof(sparse_[0]);
+            }
         private:
             Indexer indexer_;
             std::vector<T> dense_;
@@ -595,6 +600,11 @@ namespace ecs_hpp
             std::size_t size() const noexcept {
                 return values_.size();
             }
+
+            std::size_t memory_usage() const noexcept {
+                return keys_.memory_usage()
+                    + values_.capacity() * sizeof(values_[0]);
+            }
         private:
             sparse_set<K, Indexer> keys_;
             std::vector<T> values_;
@@ -646,6 +656,7 @@ namespace ecs_hpp
             virtual bool remove(entity_id id) noexcept = 0;
             virtual bool has(entity_id id) const noexcept = 0;
             virtual void clone(entity_id from, entity_id to) = 0;
+            virtual std::size_t memory_usage() const noexcept = 0;
         };
 
         template < typename T >
@@ -669,6 +680,8 @@ namespace ecs_hpp
             void for_each_component(F&& f);
             template < typename F >
             void for_each_component(F&& f) const;
+
+            std::size_t memory_usage() const noexcept override;
         private:
             registry& owner_;
             detail::sparse_map<entity_id, T, entity_id_indexer> components_;
@@ -737,6 +750,11 @@ namespace ecs_hpp
             for ( const entity_id id : components_ ) {
                 f(id, components_.get(id));
             }
+        }
+
+        template < typename T >
+        std::size_t component_storage<T>::memory_usage() const noexcept {
+            return components_.memory_usage();
         }
     }
 }
@@ -1234,6 +1252,15 @@ namespace ecs_hpp
         void process_systems_above(priority_t min);
         void process_systems_below(priority_t max);
         void process_systems_in_range(priority_t min, priority_t max);
+
+        struct memory_usage_info {
+            std::size_t entities{0u};
+            std::size_t components{0u};
+        };
+        memory_usage_info memory_usage() const noexcept;
+
+        template < typename T >
+        std::size_t component_memory_usage() const noexcept;
     private:
         template < typename T >
         detail::component_storage<T>* find_storage_() noexcept;
@@ -2215,6 +2242,24 @@ namespace ecs_hpp
         for ( auto iter = first; iter != systems_.end() && iter->first <= max; ++iter ) {
             iter->second->process(*this);
         }
+    }
+
+    inline registry::memory_usage_info registry::memory_usage() const noexcept {
+        memory_usage_info info;
+        info.entities += free_entity_ids_.capacity() * sizeof(free_entity_ids_[0]);
+        info.entities += entity_ids_.memory_usage();
+        for ( const auto family_id : storages_ ) {
+            info.components += storages_.get(family_id)->memory_usage();
+        }
+        return info;
+    }
+
+    template < typename T >
+    std::size_t registry::component_memory_usage() const noexcept {
+        const detail::component_storage<T>* storage = find_storage_<T>();
+        return storage
+            ? storage->memory_usage()
+            : 0u;
     }
 
     template < typename T >

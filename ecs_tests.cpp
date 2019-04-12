@@ -1154,6 +1154,79 @@ TEST_CASE("registry") {
             REQUIRE(e2.get_component<component_n>().i == 5);
         }
     }
+    SECTION("memory_usage") {
+        {
+            ecs::registry w;
+            REQUIRE(w.memory_usage().entities == 0u);
+
+            auto e1 = w.create_entity();
+            auto e2 = w.create_entity();
+
+            const std::size_t expected_usage =
+                2 * sizeof(ecs::entity_id) + // vector free entity ids
+                4 * sizeof(std::size_t) +    // sparse entity ids (keys)
+                2 * sizeof(ecs::entity_id);  // sparse entity ids (values)
+            REQUIRE(w.memory_usage().entities == expected_usage);
+
+            e1.destroy();
+            e2.destroy();
+            REQUIRE(w.memory_usage().entities == expected_usage);
+
+            e1 = w.create_entity();
+            e2 = w.create_entity();
+            REQUIRE(w.memory_usage().entities == expected_usage);
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(1, 2);
+
+            auto e2 = w.create_entity();
+            e2.assign_component<position_c>(1, 2);
+
+            const std::size_t expected_usage =
+                2 * sizeof(position_c) +    // vector values
+                4 * sizeof(std::size_t) +   // sparse keys (keys)
+                2 * sizeof(ecs::entity_id); // sparse keys (values)
+            REQUIRE(w.memory_usage().components == expected_usage);
+
+            REQUIRE(w.component_memory_usage<position_c>() ==
+                2 * sizeof(position_c) +
+                4 * sizeof(std::size_t) +
+                2 * sizeof(ecs::entity_id));
+
+            REQUIRE_FALSE(w.component_memory_usage<velocity_c>());
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(1, 2);
+
+            auto e2 = w.create_entity();
+            e2.assign_component<velocity_c>(3, 4);
+
+            const std::size_t expected_usage =
+                sizeof(position_c) +
+                2 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id) +
+                sizeof(velocity_c) +
+                3 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id);
+            REQUIRE(w.memory_usage().components == expected_usage);
+
+            REQUIRE(w.component_memory_usage<position_c>() ==
+                sizeof(position_c) +
+                2 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id));
+
+            REQUIRE(w.component_memory_usage<velocity_c>() ==
+                sizeof(velocity_c) +
+                3 * sizeof(std::size_t) +
+                1 * sizeof(ecs::entity_id));
+        }
+    }
 }
 
 TEST_CASE("example") {
