@@ -1,51 +1,26 @@
-cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
-project(ecs)
+# 3.8 version is required for `cxx_std_14`
+cmake_minimum_required(VERSION 3.8 FATAL_ERROR)
 
-#
-# coverage mode
-#
-
-option(ECS_BUILD_WITH_COVERAGE "Build with coverage" OFF)
-if(ECS_BUILD_WITH_COVERAGE AND (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"))
-    add_definitions(-DECS_BUILD_WITH_COVERAGE)
-    set(ECS_COVERAGE_FLAGS "--coverage")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${ECS_COVERAGE_FLAGS}")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${ECS_COVERAGE_FLAGS}")
-    set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} ${ECS_COVERAGE_FLAGS}")
+if(NOT DEFINED PROJECT_NAME)
+    set(BUILD_AS_STANDALONE ON)
 endif()
 
-#
-# sanitizer mode
-#
+project(ecs.hpp)
 
-option(ECS_BUILD_WITH_SANITIZER "Build with sanitizer" OFF)
-if(ECS_BUILD_WITH_SANITIZER AND (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"))
-    add_definitions(-DECS_BUILD_WITH_SANITIZER)
-    set(ECS_SANITIZER_FLAGS "-fno-omit-frame-pointer -fsanitize=address")
-    set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${ECS_SANITIZER_FLAGS}")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${ECS_SANITIZER_FLAGS}")
-    set(CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} ${ECS_SANITIZER_FLAGS}")
+add_library(${PROJECT_NAME} INTERFACE)
+target_include_directories(${PROJECT_NAME} INTERFACE headers)
+target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_14)
+
+if(BUILD_AS_STANDALONE)
+    option(BUILD_WITH_UNBENCH "Build with benchmarks" OFF)
+    if(BUILD_WITH_UNBENCH)
+        enable_testing()
+        add_subdirectory(unbench)
+    endif()
+
+    option(BUILD_WITH_UNTESTS "Build with unit tests" ON)
+    if(BUILD_WITH_UNTESTS)
+        enable_testing()
+        add_subdirectory(untests)
+    endif()
 endif()
-
-#
-# tests executable
-#
-
-file(GLOB test_sources "*.cpp" "*.hpp")
-add_executable(${PROJECT_NAME} ${test_sources})
-
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    CXX_STANDARD 14
-    CXX_STANDARD_REQUIRED YES
-    CXX_EXTENSIONS NO)
-
-target_compile_options(${PROJECT_NAME}
-    PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:
-        /W4>
-    PRIVATE
-    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:
-        -Wall -Wextra -Wpedantic>)
-
-enable_testing()
-add_test(${PROJECT_NAME} ${PROJECT_NAME})
