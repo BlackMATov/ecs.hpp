@@ -25,10 +25,17 @@
 
 ## Installation
 
-[ecs.hpp][ecs] is a single header library. All you need to do is copy the header file into your project and include this file:
+[ecs.hpp][ecs] is a header-only library. All you need to do is copy the headers files from `headers` directory into your project and include them:
 
 ```cpp
-#include "ecs.hpp"
+#include "ecs.hpp/ecs.hpp"
+```
+
+Also, you can add the root repository directory to your [cmake](https://cmake.org) project:
+
+```cmake
+add_subdirectory(external/ecs.hpp)
+target_link_libraries(your_project_target ecs.hpp)
 ```
 
 ## Basic usage
