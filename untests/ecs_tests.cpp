@@ -587,6 +587,15 @@ TEST_CASE("registry") {
             REQUIRE(e2.get_component<position_c>() == position_c(1,2));
         }
         {
+            ecs::prototype p;
+            p.component<position_c>(1, 2);
+            p.component<position_c>(11, 22);
+
+            ecs::registry w;
+            const auto e1 = w.create_entity(p);
+            REQUIRE(e1.get_component<position_c>() == position_c(11,22));
+        }
+        {
             const auto p = ecs::prototype()
                 .component<position_c>(1,2)
                 .component<velocity_c>(3,4);

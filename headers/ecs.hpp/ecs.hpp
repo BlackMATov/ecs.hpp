@@ -1914,7 +1914,7 @@ namespace ecs_hpp
         auto applier = std::make_unique<applier_t>(
             std::make_tuple(std::forward<Args>(args)...));
         const auto family = detail::type_family<T>::id();
-        appliers_.emplace(family, std::move(applier));
+        appliers_.insert_or_assign(family, std::move(applier));
         return *this;
     }
 
