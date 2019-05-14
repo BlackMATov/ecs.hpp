@@ -518,6 +518,54 @@ TEST_CASE("registry") {
 
             REQUIRE_FALSE(c1.remove());
         }
+        {
+            using namespace ecs::detail;
+
+            ecs::registry w;
+            ecs::entity e1 = w.create_entity();
+
+            ecs::component<position_c> c1 = w.wrap_component<position_c>(e1);
+            ecs::const_component<position_c> c2 = w.wrap_component<position_c>(e1);
+
+            REQUIRE_FALSE(c1);
+            REQUIRE_FALSE(as_const(c1));
+            REQUIRE_FALSE(c2);
+            REQUIRE_FALSE(as_const(c2));
+
+            REQUIRE_THROWS_AS(*c1, std::logic_error);
+            REQUIRE_THROWS_AS(*as_const(c1), std::logic_error);
+            REQUIRE_THROWS_AS(*c2, std::logic_error);
+            REQUIRE_THROWS_AS(*as_const(c2), std::logic_error);
+
+            c1.assign(1,2);
+
+            REQUIRE(c1);
+            REQUIRE(as_const(c1));
+            REQUIRE(c2);
+            REQUIRE(as_const(c2));
+
+            REQUIRE(*c1 == position_c(1,2));
+            REQUIRE(*as_const(c1) == position_c(1,2));
+            REQUIRE(*c2 == position_c(1,2));
+            REQUIRE(*as_const(c2) == position_c(1,2));
+
+            REQUIRE(c1->x == 1);
+            REQUIRE(c1->y == 2);
+            REQUIRE(as_const(c1)->x == 1);
+            REQUIRE(as_const(c1)->y == 2);
+
+            REQUIRE(c2->x == 1);
+            REQUIRE(c2->y == 2);
+            REQUIRE(as_const(c2)->x == 1);
+            REQUIRE(as_const(c2)->y == 2);
+
+            c1.remove();
+
+            REQUIRE_FALSE(c1);
+            REQUIRE_FALSE(as_const(c1));
+            REQUIRE_FALSE(c2);
+            REQUIRE_FALSE(as_const(c2));
+        }
     }
     SECTION("prototypes") {
         {
