@@ -28,7 +28,7 @@
 [ecs.hpp][ecs] is a header-only library. All you need to do is copy the headers files from `headers` directory into your project and include them:
 
 ```cpp
-#include "ecs_hpp/ecs.hpp"
+#include "ecs.hpp/ecs.hpp"
 ```
 
 Also, you can add the root repository directory to your [cmake](https://cmake.org) project:

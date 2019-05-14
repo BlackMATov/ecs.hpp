@@ -7,7 +7,7 @@
 #define CATCH_CONFIG_FAST_COMPILE
 #include <catch2/catch.hpp>
 
-#include <ecs_hpp/ecs.hpp>
+#include <ecs.hpp/ecs.hpp>
 namespace ecs = ecs_hpp;
 
 namespace
