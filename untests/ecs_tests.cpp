@@ -661,6 +661,37 @@ TEST_CASE("registry") {
             REQUIRE(e4.get_component<position_c>() == position_c(1,2));
             REQUIRE(e4.get_component<velocity_c>() == velocity_c(3,4));
         }
+        {
+            const auto p1 = ecs::prototype()
+                .component<position_c>(1,2)
+                .component<velocity_c>(3,4);
+
+            position_c c1;
+            velocity_c c2;
+            movable_c c3;
+
+            REQUIRE(p1.apply_to_component(c1));
+            REQUIRE(p1.apply_to_component(c2));
+            REQUIRE_FALSE(p1.apply_to_component(c3));
+
+            REQUIRE(c1 == position_c(1,2));
+            REQUIRE(c2 == velocity_c(3,4));
+        }
+        {
+            const auto p1 = ecs::prototype()
+                .component<position_c>(1,2);
+
+            position_c c1;
+            velocity_c c2;
+            movable_c c3;
+
+            REQUIRE(p1.apply_to_component(c1));
+            REQUIRE_FALSE(p1.apply_to_component(c2));
+            REQUIRE_FALSE(p1.apply_to_component(c3));
+
+            REQUIRE(c1 == position_c(1,2));
+            REQUIRE(c2 == velocity_c(0,0));
+        }
     }
     SECTION("component_assigning") {
         {
