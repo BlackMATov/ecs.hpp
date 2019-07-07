@@ -7,5 +7,5 @@
 #include "bench_base.hpp"
 using namespace ecs_hpp_unbench;
 
-#include "ecs.hpp"
+#include <ecs.hpp/ecs.hpp>
 namespace ecs = ecs_hpp;
