@@ -565,6 +565,33 @@ TEST_CASE("registry") {
             REQUIRE_FALSE(c2);
             REQUIRE_FALSE(as_const(c2));
         }
+        {
+            ecs::registry w;
+
+            ecs::entity e1 = w.create_entity();
+            e1.assign_component<position_c>();
+
+            ecs::entity e2 = w.create_entity();
+            e2.assign_component<position_c>();
+            e2.assign_component<velocity_c>();
+
+            ecs::entity e3 = w.create_entity();
+            e3.assign_component<position_c>();
+            e3.assign_component<velocity_c>();
+
+            REQUIRE(w.component_count<position_c>() == 3u);
+            REQUIRE(w.component_count<velocity_c>() == 2u);
+
+            REQUIRE(w.remove_all_components<position_c>() == 3u);
+            REQUIRE(w.component_count<position_c>() == 0u);
+            REQUIRE(w.component_count<velocity_c>() == 2u);
+
+            REQUIRE(w.remove_all_components<velocity_c>() == 2u);
+            REQUIRE(w.component_count<position_c>() == 0u);
+            REQUIRE(w.component_count<velocity_c>() == 0u);
+
+            REQUIRE(w.remove_all_components<movable_c>() == 0u);
+        }
     }
     SECTION("prototypes") {
         {
