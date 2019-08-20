@@ -310,7 +310,6 @@ namespace ecs_hpp
                 noexcept(std::declval<Indexer>()(std::declval<T>())),
                 "unsupported sparse_set indexer");
             static_assert(
-                std::is_nothrow_destructible<T>::value &&
                 std::is_nothrow_move_assignable<T>::value &&
                 noexcept(std::declval<T>() == std::declval<T>()),
                 "unsupported sparse_set value type");
@@ -467,7 +466,6 @@ namespace ecs_hpp
             using const_iterator = typename std::vector<K>::const_iterator;
         public:
             static_assert(
-                std::is_nothrow_destructible<T>::value &&
                 std::is_nothrow_move_assignable<T>::value,
                 "unsupported sparse_map value type");
         public:
