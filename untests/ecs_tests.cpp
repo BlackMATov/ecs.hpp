@@ -813,6 +813,31 @@ TEST_CASE("registry") {
             e1.destroy();
         }
     }
+    SECTION("component_ensuring") {
+        {
+            ecs::registry w;
+            ecs::entity e1 = w.create_entity();
+
+            e1.ensure_component<position_c>(1,2);
+            e1.ensure_component<movable_c>();
+
+            REQUIRE(e1.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e1.exists_component<movable_c>());
+
+            e1.ensure_component<position_c>(10,20).x = 15;
+            e1.ensure_component<movable_c>();
+
+            REQUIRE(e1.get_component<position_c>() == position_c(15,2));
+            REQUIRE(e1.exists_component<movable_c>());
+
+            ecs::component<velocity_c> c1 = w.wrap_component<velocity_c>(e1);
+            REQUIRE_FALSE(c1.exists());
+            c1.ensure(2, 1).y = 10;
+            REQUIRE(c1.get() == velocity_c(2, 10));
+            c1.ensure(10, 20).x = 20;
+            REQUIRE(c1.get() == velocity_c(20, 10));
+        }
+    }
     SECTION("component_accessing") {
         {
             ecs::registry w;

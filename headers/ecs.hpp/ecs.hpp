@@ -669,6 +669,12 @@ namespace ecs_hpp
                 return components_.get(id);
             }
 
+            template < typename... Args >
+            T& ensure(entity_id id, Args&&... args) {
+                components_.emplace(id, std::forward<Args>(args)...);
+                return components_.get(id);
+            }
+
             bool exists(entity_id id) const noexcept {
                 return components_.has(id);
             }
@@ -736,6 +742,12 @@ namespace ecs_hpp
 
             template < typename... Args >
             T& assign(entity_id id, Args&&...) {
+                components_.insert(id);
+                return empty_value_;
+            }
+
+            template < typename... Args >
+            T& ensure(entity_id id, Args&&...) {
                 components_.insert(id);
                 return empty_value_;
             }
@@ -838,6 +850,9 @@ namespace ecs_hpp
 
         template < typename T, typename... Args >
         T& assign_component(Args&&... args);
+
+        template < typename T, typename... Args >
+        T& ensure_component(Args&&... args);
 
         template < typename T >
         bool remove_component();
@@ -991,6 +1006,9 @@ namespace ecs_hpp
 
         template < typename... Args >
         T& assign(Args&&... args);
+
+        template < typename... Args >
+        T& ensure(Args&&... args);
 
         T& get();
         const T& get() const;
@@ -1262,6 +1280,9 @@ namespace ecs_hpp
         template < typename T, typename... Args >
         T& assign_component(const uentity& ent, Args&&... args);
 
+        template < typename T, typename... Args >
+        T& ensure_component(const uentity& ent, Args&&... args);
+
         template < typename T >
         bool remove_component(const uentity& ent);
 
@@ -1490,6 +1511,13 @@ namespace ecs_hpp
             std::forward<Args>(args)...);
     }
 
+    template < typename T, typename... Args >
+    T& entity::ensure_component(Args&&... args) {
+        return (*owner_).ensure_component<T>(
+            id_,
+            std::forward<Args>(args)...);
+    }
+
     template < typename T >
     bool entity::remove_component() {
         return (*owner_).remove_component<T>(id_);
@@ -1692,6 +1720,13 @@ namespace ecs_hpp
     template < typename... Args >
     T& component<T>::assign(Args&&... args) {
         return owner_.assign_component<T>(
+            std::forward<Args>(args)...);
+    }
+
+    template < typename T >
+    template < typename... Args >
+    T& component<T>::ensure(Args&&... args) {
+        return owner_.ensure_component<T>(
             std::forward<Args>(args)...);
     }
 
@@ -2170,6 +2205,14 @@ namespace ecs_hpp
     T& registry::assign_component(const uentity& ent, Args&&... args) {
         assert(valid_entity(ent));
         return get_or_create_storage_<T>().assign(
+            ent,
+            std::forward<Args>(args)...);
+    }
+
+    template < typename T, typename... Args >
+    T& registry::ensure_component(const uentity& ent, Args&&... args) {
+        assert(valid_entity(ent));
+        return get_or_create_storage_<T>().ensure(
             ent,
             std::forward<Args>(args)...);
     }
