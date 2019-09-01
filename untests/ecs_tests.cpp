@@ -177,7 +177,7 @@ TEST_CASE("detail") {
             REQUIRE(s.insert(position_c(1,2)));
             REQUIRE_FALSE(s.insert(position_c(1,2)));
             REQUIRE(s.has(position_c(1,2)));
-            REQUIRE(s.emplace(3,4));
+            REQUIRE(s.insert(position_c(3,4)));
             REQUIRE(s.has(position_c(3,4)));
             REQUIRE(s.get_dense_index(position_c(1,2)) == 0);
             REQUIRE(s.get_dense_index(position_c(3,4)) == 1);
@@ -209,16 +209,16 @@ TEST_CASE("detail") {
 
             {
                 obj_t o{21u};
-                REQUIRE(m.insert(21u, o));
-                REQUIRE(m.insert(42u, obj_t{42u}));
-                REQUIRE(m.emplace(84u, 84u));
+                REQUIRE(m.insert(21u, o).second);
+                REQUIRE(m.insert(42u, obj_t{42u}).second);
+                REQUIRE(m.insert(84u, obj_t(84u)).second);
             }
 
             {
                 obj_t o{21u};
-                REQUIRE_FALSE(m.insert(21u, o));
-                REQUIRE_FALSE(m.insert(42u, obj_t{42u}));
-                REQUIRE_FALSE(m.emplace(84u, 84u));
+                REQUIRE_FALSE(m.insert(21u, o).second);
+                REQUIRE_FALSE(m.insert(42u, obj_t{42u}).second);
+                REQUIRE_FALSE(m.insert(84u, obj_t(84u)).second);
             }
 
             REQUIRE_FALSE(m.empty());
@@ -270,10 +270,10 @@ TEST_CASE("detail") {
             };
 
             sparse_map<position_c, obj_t, position_c_indexer> s{position_c_indexer()};
-            REQUIRE(s.insert(position_c(1,2), obj_t{1}));
-            REQUIRE_FALSE(s.insert(position_c(1,2), obj_t{1}));
+            REQUIRE(s.insert(position_c(1,2), obj_t{1}).second);
+            REQUIRE_FALSE(s.insert(position_c(1,2), obj_t{1}).second);
             REQUIRE(s.has(position_c(1,2)));
-            REQUIRE(s.emplace(position_c(3,4), obj_t{3}));
+            REQUIRE(s.insert(position_c(3,4), obj_t{3}).second);
             REQUIRE(s.has(position_c(3,4)));
             REQUIRE(s.get(position_c(1,2)).x == 1);
             REQUIRE(s.get(position_c(3,4)).x == 3);
@@ -291,14 +291,14 @@ TEST_CASE("detail") {
             };
 
             sparse_map<unsigned, obj_t> m;
-            REQUIRE(m.insert_or_assign(42, obj_t(42)));
+            REQUIRE(m.insert_or_assign(42, obj_t(42)).second);
             REQUIRE(m.has(42));
             REQUIRE(m.get(42).x == 42);
-            REQUIRE_FALSE(m.insert_or_assign(42, obj_t(21)));
+            REQUIRE_FALSE(m.insert_or_assign(42, obj_t(21)).second);
             REQUIRE(m.has(42));
             REQUIRE(m.get(42).x == 21);
             REQUIRE(m.size() == 1);
-            REQUIRE(m.insert_or_assign(84, obj_t(84)));
+            REQUIRE(m.insert_or_assign(84, obj_t(84)).second);
             REQUIRE(m.has(84));
             REQUIRE(m.get(84).x == 84);
             REQUIRE(m.size() == 2);
@@ -811,6 +811,31 @@ TEST_CASE("registry") {
             REQUIRE(&e2_vel == &w.get_component<velocity_c>(e2));
 
             e1.destroy();
+        }
+    }
+    SECTION("component_ensuring") {
+        {
+            ecs::registry w;
+            ecs::entity e1 = w.create_entity();
+
+            e1.ensure_component<position_c>(1,2);
+            e1.ensure_component<movable_c>();
+
+            REQUIRE(e1.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e1.exists_component<movable_c>());
+
+            e1.ensure_component<position_c>(10,20).x = 15;
+            e1.ensure_component<movable_c>();
+
+            REQUIRE(e1.get_component<position_c>() == position_c(15,2));
+            REQUIRE(e1.exists_component<movable_c>());
+
+            ecs::component<velocity_c> c1 = w.wrap_component<velocity_c>(e1);
+            REQUIRE_FALSE(c1.exists());
+            c1.ensure(2, 1).y = 10;
+            REQUIRE(c1.get() == velocity_c(2, 10));
+            c1.ensure(10, 20).x = 20;
+            REQUIRE(c1.get() == velocity_c(20, 10));
         }
     }
     SECTION("component_accessing") {

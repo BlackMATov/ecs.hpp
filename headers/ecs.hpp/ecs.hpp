@@ -105,6 +105,7 @@ namespace ecs_hpp
                 std::tuple<T, Ts...>&& t,
                 std::index_sequence<Is...> iseq)
             {
+                (void)t;
                 (void)iseq;
                 return std::make_tuple(std::move(std::get<Is + 1u>(t))...);
             }
@@ -114,6 +115,7 @@ namespace ecs_hpp
                 const std::tuple<T, Ts...>& t,
                 std::index_sequence<Is...> iseq)
             {
+                (void)t;
                 (void)iseq;
                 return std::make_tuple(std::get<Is + 1u>(t)...);
             }
@@ -289,6 +291,40 @@ namespace ecs_hpp
     }
 }
 
+namespace ecs_hpp
+{
+    namespace detail
+    {
+        template < typename Tag >
+        class incremental_locker final {
+        public:
+            incremental_locker() noexcept {
+                ++lock_count_;
+            }
+
+            ~incremental_locker() noexcept {
+                assert(lock_count_);
+                --lock_count_;
+            }
+
+            incremental_locker(incremental_locker&&) = delete;
+            incremental_locker& operator=(incremental_locker&&) = delete;
+
+            incremental_locker(const incremental_locker&) = delete;
+            incremental_locker& operator=(const incremental_locker&) = delete;
+
+            static bool is_locked() noexcept {
+                return !!lock_count_;
+            }
+        private:
+            static std::size_t lock_count_;
+        };
+
+        template < typename Tag >
+        std::size_t incremental_locker<Tag>::lock_count_ = 0u;
+    }
+}
+
 // -----------------------------------------------------------------------------
 //
 // detail::sparse_set
@@ -366,11 +402,6 @@ namespace ecs_hpp
                 dense_.push_back(std::forward<UT>(v));
                 sparse_[vi] = dense_.size() - 1u;
                 return true;
-            }
-
-            template < typename... Args >
-            bool emplace(Args&&... args) {
-                return insert(T(std::forward<Args>(args)...));
             }
 
             bool unordered_erase(const T& v) noexcept {
@@ -509,27 +540,14 @@ namespace ecs_hpp
             }
 
             template < typename UK, typename UT >
-            bool insert(UK&& k, UT&& v) {
-                if ( keys_.has(k) ) {
-                    return false;
+            std::pair<T*, bool> insert(UK&& k, UT&& v) {
+                if ( T* value = find(k) ) {
+                    return std::make_pair(value, false);
                 }
                 values_.push_back(std::forward<UT>(v));
                 try {
-                    return keys_.insert(std::forward<UK>(k));
-                } catch (...) {
-                    values_.pop_back();
-                    throw;
-                }
-            }
-
-            template < typename UK, typename... Args >
-            bool emplace(UK&& k, Args&&... args) {
-                if ( keys_.has(k) ) {
-                    return false;
-                }
-                values_.emplace_back(std::forward<Args>(args)...);
-                try {
-                    return keys_.insert(std::forward<UK>(k));
+                    keys_.insert(std::forward<UK>(k));
+                    return std::make_pair(&values_.back(), true);
                 } catch (...) {
                     values_.pop_back();
                     throw;
@@ -537,13 +555,18 @@ namespace ecs_hpp
             }
 
             template < typename UK, typename UT >
-            bool insert_or_assign(UK&& k, UT&& v) {
-                if ( keys_.has(k) ) {
-                    get(k) = std::forward<UT>(v);
-                    return false;
-                } else {
-                    insert(std::forward<UK>(k), std::forward<UT>(v));
-                    return true;
+            std::pair<T*, bool> insert_or_assign(UK&& k, UT&& v) {
+                if ( T* value = find(k) ) {
+                    *value = std::forward<UT>(v);
+                    return std::make_pair(value, false);
+                }
+                values_.push_back(std::forward<UT>(v));
+                try {
+                    keys_.insert(std::forward<UK>(k));
+                    return std::make_pair(&values_.back(), true);
+                } catch (...) {
+                    values_.pop_back();
+                    throw;
                 }
             }
 
@@ -665,8 +688,21 @@ namespace ecs_hpp
 
             template < typename... Args >
             T& assign(entity_id id, Args&&... args) {
-                components_.insert_or_assign(id, T(std::forward<Args>(args)...));
-                return components_.get(id);
+                if ( T* value = components_.find(id) ) {
+                    *value = T(std::forward<Args>(args)...);
+                    return *value;
+                }
+                assert(!components_locker::is_locked());
+                return *components_.insert(id, T(std::forward<Args>(args)...)).first;
+            }
+
+            template < typename... Args >
+            T& ensure(entity_id id, Args&&... args) {
+                if ( T* value = components_.find(id) ) {
+                    return *value;
+                }
+                assert(!components_locker::is_locked());
+                return *components_.insert(id, T(std::forward<Args>(args)...)).first;
             }
 
             bool exists(entity_id id) const noexcept {
@@ -674,10 +710,12 @@ namespace ecs_hpp
             }
 
             bool remove(entity_id id) noexcept override {
+                assert(!components_locker::is_locked());
                 return components_.unordered_erase(id);
             }
 
             std::size_t remove_all() noexcept {
+                assert(!components_locker::is_locked());
                 const std::size_t count = components_.size();
                 components_.clear();
                 return count;
@@ -700,14 +738,15 @@ namespace ecs_hpp
             }
 
             void clone(entity_id from, entity_id to) override {
-                const T* c = components_.find(from);
+                const T* c = find(from);
                 if ( c ) {
-                    components_.insert_or_assign(to, *c);
+                    assign(to, *c);
                 }
             }
 
             template < typename F >
             void for_each_component(F&& f) {
+                components_locker lock;
                 for ( const entity_id id : components_ ) {
                     f(id, components_.get(id));
                 }
@@ -715,6 +754,7 @@ namespace ecs_hpp
 
             template < typename F >
             void for_each_component(F&& f) const {
+                components_locker lock;
                 for ( const entity_id id : components_ ) {
                     f(id, components_.get(id));
                 }
@@ -726,6 +766,7 @@ namespace ecs_hpp
         private:
             registry& owner_;
             detail::sparse_map<entity_id, T, entity_id_indexer> components_;
+            using components_locker = detail::incremental_locker<struct components_tag>;
         };
 
         template < typename T >
@@ -736,6 +777,20 @@ namespace ecs_hpp
 
             template < typename... Args >
             T& assign(entity_id id, Args&&...) {
+                if ( components_.has(id) ) {
+                    return empty_value_;
+                }
+                assert(!components_locker::is_locked());
+                components_.insert(id);
+                return empty_value_;
+            }
+
+            template < typename... Args >
+            T& ensure(entity_id id, Args&&...) {
+                if ( components_.has(id) ) {
+                    return empty_value_;
+                }
+                assert(!components_locker::is_locked());
                 components_.insert(id);
                 return empty_value_;
             }
@@ -745,10 +800,12 @@ namespace ecs_hpp
             }
 
             bool remove(entity_id id) noexcept override {
+                assert(!components_locker::is_locked());
                 return components_.unordered_erase(id);
             }
 
             std::size_t remove_all() noexcept {
+                assert(!components_locker::is_locked());
                 const std::size_t count = components_.size();
                 components_.clear();
                 return count;
@@ -775,13 +832,15 @@ namespace ecs_hpp
             }
 
             void clone(entity_id from, entity_id to) override {
-                if ( components_.has(from) ) {
-                    components_.insert(to);
+                const T* c = find(from);
+                if ( c ) {
+                    assign(to, *c);
                 }
             }
 
             template < typename F >
             void for_each_component(F&& f) {
+                components_locker lock;
                 for ( const entity_id id : components_ ) {
                     f(id, empty_value_);
                 }
@@ -789,6 +848,7 @@ namespace ecs_hpp
 
             template < typename F >
             void for_each_component(F&& f) const {
+                components_locker lock;
                 for ( const entity_id id : components_ ) {
                     f(id, empty_value_);
                 }
@@ -801,6 +861,7 @@ namespace ecs_hpp
             registry& owner_;
             static T empty_value_;
             detail::sparse_set<entity_id, entity_id_indexer> components_;
+            using components_locker = detail::incremental_locker<struct components_tag>;
         };
 
         template < typename T >
@@ -838,6 +899,9 @@ namespace ecs_hpp
 
         template < typename T, typename... Args >
         T& assign_component(Args&&... args);
+
+        template < typename T, typename... Args >
+        T& ensure_component(Args&&... args);
 
         template < typename T >
         bool remove_component();
@@ -991,6 +1055,9 @@ namespace ecs_hpp
 
         template < typename... Args >
         T& assign(Args&&... args);
+
+        template < typename... Args >
+        T& ensure(Args&&... args);
 
         T& get();
         const T& get() const;
@@ -1262,6 +1329,9 @@ namespace ecs_hpp
         template < typename T, typename... Args >
         T& assign_component(const uentity& ent, Args&&... args);
 
+        template < typename T, typename... Args >
+        T& ensure_component(const uentity& ent, Args&&... args);
+
         template < typename T >
         bool remove_component(const uentity& ent);
 
@@ -1396,6 +1466,7 @@ namespace ecs_hpp
         entity_id last_entity_id_{0u};
         std::vector<entity_id> free_entity_ids_;
         detail::sparse_set<entity_id, detail::entity_id_indexer> entity_ids_;
+        using entity_ids_locker = detail::incremental_locker<struct entity_ids_tag>;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
         detail::sparse_map<family_id, storage_uptr> storages_;
@@ -1486,6 +1557,13 @@ namespace ecs_hpp
     template < typename T, typename... Args >
     T& entity::assign_component(Args&&... args) {
         return (*owner_).assign_component<T>(
+            id_,
+            std::forward<Args>(args)...);
+    }
+
+    template < typename T, typename... Args >
+    T& entity::ensure_component(Args&&... args) {
+        return (*owner_).ensure_component<T>(
             id_,
             std::forward<Args>(args)...);
     }
@@ -1692,6 +1770,13 @@ namespace ecs_hpp
     template < typename... Args >
     T& component<T>::assign(Args&&... args) {
         return owner_.assign_component<T>(
+            std::forward<Args>(args)...);
+    }
+
+    template < typename T >
+    template < typename... Args >
+    T& component<T>::ensure(Args&&... args) {
+        return owner_.ensure_component<T>(
             std::forward<Args>(args)...);
     }
 
@@ -2105,6 +2190,7 @@ namespace ecs_hpp
     }
 
     inline entity registry::create_entity() {
+        assert(!entity_ids_locker::is_locked());
         if ( !free_entity_ids_.empty() ) {
             const auto free_ent_id = free_entity_ids_.back();
             const auto new_ent_id = detail::upgrade_entity_id(free_ent_id);
@@ -2153,6 +2239,7 @@ namespace ecs_hpp
     }
 
     inline void registry::destroy_entity(const uentity& ent) noexcept {
+        assert(!entity_ids_locker::is_locked());
         assert(valid_entity(ent));
         remove_all_components(ent);
         if ( entity_ids_.unordered_erase(ent) ) {
@@ -2170,6 +2257,14 @@ namespace ecs_hpp
     T& registry::assign_component(const uentity& ent, Args&&... args) {
         assert(valid_entity(ent));
         return get_or_create_storage_<T>().assign(
+            ent,
+            std::forward<Args>(args)...);
+    }
+
+    template < typename T, typename... Args >
+    T& registry::ensure_component(const uentity& ent, Args&&... args) {
+        assert(valid_entity(ent));
+        return get_or_create_storage_<T>().ensure(
             ent,
             std::forward<Args>(args)...);
     }
@@ -2251,24 +2346,28 @@ namespace ecs_hpp
 
     template < typename... Ts >
     std::tuple<Ts&...> registry::get_components(const uentity& ent) {
+        (void)ent;
         assert(valid_entity(ent));
         return std::make_tuple(std::ref(get_component<Ts>(ent))...);
     }
 
     template < typename... Ts >
     std::tuple<const Ts&...> registry::get_components(const const_uentity& ent) const {
+        (void)ent;
         assert(valid_entity(ent));
         return std::make_tuple(std::cref(get_component<Ts>(ent))...);
     }
 
     template < typename... Ts >
     std::tuple<Ts*...> registry::find_components(const uentity& ent) noexcept {
+        (void)ent;
         assert(valid_entity(ent));
         return std::make_tuple(find_component<Ts>(ent)...);
     }
 
     template < typename... Ts >
     std::tuple<const Ts*...> registry::find_components(const const_uentity& ent) const noexcept {
+        (void)ent;
         assert(valid_entity(ent));
         return std::make_tuple(find_component<Ts>(ent)...);
     }
@@ -2298,6 +2397,7 @@ namespace ecs_hpp
 
     template < typename F >
     void registry::for_each_entity(F&& f) {
+        entity_ids_locker lock;
         for ( const auto id : entity_ids_ ) {
             f({*this, id});
         }
@@ -2305,6 +2405,7 @@ namespace ecs_hpp
 
     template < typename F >
     void registry::for_each_entity(F&& f) const {
+        entity_ids_locker lock;
         for ( const auto id : entity_ids_ ) {
             f({*this, id});
         }
@@ -2351,10 +2452,9 @@ namespace ecs_hpp
             [](priority_t pr, const auto& r){
                 return pr < r.first;
             });
-        systems_.emplace(
+        systems_.insert(
             iter,
-            priority,
-            std::make_unique<T>(std::forward<Args>(args)...));
+            std::make_pair(priority, std::make_unique<T>(std::forward<Args>(args)...)));
     }
 
     inline void registry::process_all_systems() {
@@ -2431,7 +2531,7 @@ namespace ecs_hpp
             return *storage;
         }
         const auto family = detail::type_family<T>::id();
-        storages_.emplace(
+        storages_.insert(
             family,
             std::make_unique<detail::component_storage<T>>(*this));
         return *static_cast<detail::component_storage<T>*>(
