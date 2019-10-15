@@ -884,7 +884,7 @@ namespace ecs_hpp
         T& ensure_component(Args&&... args);
 
         template < typename T >
-        bool remove_component();
+        bool remove_component() noexcept;
 
         template < typename T >
         bool exists_component() const noexcept;
@@ -1030,7 +1030,7 @@ namespace ecs_hpp
         entity& owner() noexcept;
         const entity& owner() const noexcept;
 
-        bool remove();
+        bool remove() noexcept;
         bool exists() const noexcept;
 
         template < typename... Args >
@@ -1310,7 +1310,7 @@ namespace ecs_hpp
         T& ensure_component(const uentity& ent, Args&&... args);
 
         template < typename T >
-        bool remove_component(const uentity& ent);
+        bool remove_component(const uentity& ent) noexcept;
 
         template < typename T >
         bool exists_component(const const_uentity& ent) const noexcept;
@@ -1600,7 +1600,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool entity::remove_component() {
+    bool entity::remove_component() noexcept {
         return (*owner_).remove_component<T>(id_);
     }
 
@@ -1788,7 +1788,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool component<T>::remove() {
+    bool component<T>::remove() noexcept {
         return owner_.remove_component<T>();
     }
 
@@ -2301,7 +2301,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool registry::remove_component(const uentity& ent) {
+    bool registry::remove_component(const uentity& ent) noexcept {
         assert(valid_entity(ent));
         detail::component_storage<T>* storage = find_storage_<T>();
         return storage
