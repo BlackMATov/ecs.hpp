@@ -42,24 +42,26 @@ namespace ecs_hpp
     class system;
     class registry;
 
+    template < typename T >
+    class exists;
     template < typename... Ts >
-    class filter_any;
+    class exists_any;
     template < typename... Ts >
-    class filter_all;
+    class exists_all;
 
+    template < typename T >
+    class option_neg;
     template < typename... Ts >
-    class require_any;
+    class option_conj;
     template < typename... Ts >
-    class require_all;
-
-    template < typename... Ts >
-    using filter = filter_any<Ts...>;
-    template < typename... Ts >
-    using require = require_all<Ts...>;
+    class option_disj;
 
     class entity_filler;
     class registry_filler;
+}
 
+namespace ecs_hpp
+{
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
     using priority_t = std::int32_t;
@@ -859,7 +861,7 @@ namespace ecs_hpp
 {
     class entity final {
     public:
-        entity(registry& owner) noexcept;
+        explicit entity(registry& owner) noexcept;
         entity(registry& owner, entity_id id) noexcept;
 
         entity(const entity&) = default;
@@ -884,7 +886,7 @@ namespace ecs_hpp
         T& ensure_component(Args&&... args);
 
         template < typename T >
-        bool remove_component();
+        bool remove_component() noexcept;
 
         template < typename T >
         bool exists_component() const noexcept;
@@ -952,7 +954,7 @@ namespace ecs_hpp
     public:
         const_entity(const entity& ent) noexcept;
 
-        const_entity(const registry& owner) noexcept;
+        explicit const_entity(const registry& owner) noexcept;
         const_entity(const registry& owner, entity_id id) noexcept;
 
         const_entity(const const_entity&) = default;
@@ -1019,7 +1021,7 @@ namespace ecs_hpp
     template < typename T >
     class component final {
     public:
-        component(const entity& owner) noexcept;
+        explicit component(const entity& owner) noexcept;
 
         component(const component&) = default;
         component& operator=(const component&) = default;
@@ -1030,7 +1032,7 @@ namespace ecs_hpp
         entity& owner() noexcept;
         const entity& owner() const noexcept;
 
-        bool remove();
+        bool valid() const noexcept;
         bool exists() const noexcept;
 
         template < typename... Args >
@@ -1038,6 +1040,8 @@ namespace ecs_hpp
 
         template < typename... Args >
         T& ensure(Args&&... args);
+
+        bool remove() noexcept;
 
         T& get();
         const T& get() const;
@@ -1092,7 +1096,7 @@ namespace ecs_hpp
     class const_component final {
     public:
         const_component(const component<T>& comp) noexcept;
-        const_component(const const_entity& owner) noexcept;
+        explicit const_component(const const_entity& owner) noexcept;
 
         const_component(const const_component&) = default;
         const_component& operator=(const const_component&) = default;
@@ -1102,6 +1106,7 @@ namespace ecs_hpp
 
         const const_entity& owner() const noexcept;
 
+        bool valid() const noexcept;
         bool exists() const noexcept;
 
         const T& get() const;
@@ -1283,7 +1288,6 @@ namespace ecs_hpp
         };
     public:
         registry() = default;
-        ~registry() noexcept = default;
 
         registry(const registry& other) = delete;
         registry& operator=(const registry& other) = delete;
@@ -1310,7 +1314,7 @@ namespace ecs_hpp
         T& ensure_component(const uentity& ent, Args&&... args);
 
         template < typename T >
-        bool remove_component(const uentity& ent);
+        bool remove_component(const uentity& ent) noexcept;
 
         template < typename T >
         bool exists_component(const const_uentity& ent) const noexcept;
@@ -1459,52 +1463,149 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
-// filter
+// options
 //
 // -----------------------------------------------------------------------------
 
 namespace ecs_hpp
 {
+    //
+    // traits
+    //
+
+    template < typename T >
+    struct option {
+        static constexpr bool instance = false;
+    };
+
+    template < typename T >
+    struct option<exists<T>> {
+        static constexpr bool instance = true;
+    };
+
     template < typename... Ts >
-    class filter_any final {
+    struct option<exists_any<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename... Ts >
+    struct option<exists_all<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename T >
+    struct option<option_neg<T>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename... Ts >
+    struct option<option_conj<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename... Ts >
+    struct option<option_disj<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    //
+    // options
+    //
+
+    template < typename T >
+    class exists final {
     public:
-        bool operator()(const const_entity& e) const noexcept {
-            return !(... || e.exists_component<Ts>());
+        bool operator()(const const_entity& e) const {
+            return e.exists_component<T>();
         }
     };
 
     template < typename... Ts >
-    class filter_all final {
+    class exists_any final {
     public:
-        bool operator()(const const_entity& e) const noexcept {
-            return !(... && e.exists_component<Ts>());
-        }
-    };
-}
-
-// -----------------------------------------------------------------------------
-//
-// require
-//
-// -----------------------------------------------------------------------------
-
-namespace ecs_hpp
-{
-    template < typename... Ts >
-    class require_any final {
-    public:
-        bool operator()(const const_entity& e) const noexcept {
+        bool operator()(const const_entity& e) const {
             return (... || e.exists_component<Ts>());
         }
     };
 
     template < typename... Ts >
-    class require_all final {
+    class exists_all final {
     public:
-        bool operator()(const const_entity& e) const noexcept {
+        bool operator()(const const_entity& e) const {
             return (... && e.exists_component<Ts>());
         }
     };
+
+    //
+    // combinators
+    //
+
+    template < typename T >
+    class option_neg final {
+    public:
+        option_neg(T opt)
+        : opt_(std::move(opt)) {}
+
+        bool operator()(const const_entity& e) const {
+            return !opt_(e);
+        }
+    private:
+        T opt_;
+    };
+
+    template < typename... Ts >
+    class option_conj final {
+    public:
+        option_conj(Ts... opts)
+        : opts_(std::make_tuple(std::move(opts)...)) {}
+
+        bool operator()(const const_entity& e) const {
+            return std::apply([&e](auto&&... opts){
+                return (... && opts(e));
+            }, opts_);
+        }
+    private:
+        std::tuple<Ts...> opts_;
+    };
+
+    template < typename... Ts >
+    class option_disj final {
+    public:
+        option_disj(Ts... opts)
+        : opts_(std::make_tuple(std::move(opts)...)) {}
+
+        bool operator()(const const_entity& e) const {
+            return std::apply([&e](auto&&... opts){
+                return (... || opts(e));
+            }, opts_);
+        }
+    private:
+        std::tuple<Ts...> opts_;
+    };
+
+    //
+    // operators
+    //
+
+    template < typename A
+             , typename = std::enable_if_t<option<A>::instance>>
+    option_neg<std::decay_t<A>> operator!(A&& a) {
+        return {std::forward<A>(a)};
+    }
+
+    template < typename A, typename B
+             , typename = std::enable_if_t<option<A>::instance>
+             , typename = std::enable_if_t<option<B>::instance> >
+    option_conj<std::decay_t<A>, std::decay_t<B>> operator&&(A&& a, B&& b) {
+        return {std::forward<A>(a), std::forward<B>(b)};
+    }
+
+    template < typename A, typename B
+             , typename = std::enable_if_t<option<A>::instance>
+             , typename = std::enable_if_t<option<B>::instance> >
+    option_disj<std::decay_t<A>, std::decay_t<B>> operator||(A&& a, B&& b) {
+        return {std::forward<A>(a), std::forward<B>(b)};
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -1600,7 +1701,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool entity::remove_component() {
+    bool entity::remove_component() noexcept {
         return (*owner_).remove_component<T>(id_);
     }
 
@@ -1788,8 +1889,8 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool component<T>::remove() {
-        return owner_.remove_component<T>();
+    bool component<T>::valid() const noexcept {
+        return owner_.valid();
     }
 
     template < typename T >
@@ -1800,15 +1901,18 @@ namespace ecs_hpp
     template < typename T >
     template < typename... Args >
     T& component<T>::assign(Args&&... args) {
-        return owner_.assign_component<T>(
-            std::forward<Args>(args)...);
+        return owner_.assign_component<T>(std::forward<Args>(args)...);
     }
 
     template < typename T >
     template < typename... Args >
     T& component<T>::ensure(Args&&... args) {
-        return owner_.ensure_component<T>(
-            std::forward<Args>(args)...);
+        return owner_.ensure_component<T>(std::forward<Args>(args)...);
+    }
+
+    template < typename T >
+    bool component<T>::remove() noexcept {
+        return owner_.remove_component<T>();
     }
 
     template < typename T >
@@ -1901,6 +2005,11 @@ namespace ecs_hpp
     template < typename T >
     const const_entity& const_component<T>::owner() const noexcept {
         return owner_;
+    }
+
+    template < typename T >
+    bool const_component<T>::valid() const noexcept {
+        return owner_.valid();
     }
 
     template < typename T >
@@ -2212,12 +2321,12 @@ namespace ecs_hpp
 
     template < typename T >
     component<T> registry::wrap_component(const const_uentity& ent) noexcept {
-        return {wrap_entity(ent)};
+        return component<T>{wrap_entity(ent)};
     }
 
     template < typename T >
     const_component<T> registry::wrap_component(const const_uentity& ent) const noexcept {
-        return {wrap_entity(ent)};
+        return const_component<T>{wrap_entity(ent)};
     }
 
     inline entity registry::create_entity() {
@@ -2301,7 +2410,7 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool registry::remove_component(const uentity& ent) {
+    bool registry::remove_component(const uentity& ent) noexcept {
         assert(valid_entity(ent));
         detail::component_storage<T>* storage = find_storage_<T>();
         return storage

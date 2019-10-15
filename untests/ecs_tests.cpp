@@ -437,6 +437,15 @@ TEST_CASE("registry") {
     SECTION("components") {
         {
             ecs::registry w;
+            ecs::entity e{w};
+            ecs::component<position_c> c1{e};
+            ecs::const_component<velocity_c> c2{e};
+            REQUIRE_FALSE(e.valid());
+            REQUIRE_FALSE(c1.valid());
+            REQUIRE_FALSE(c2.valid());
+        }
+        {
+            ecs::registry w;
             ecs::entity e1 = w.create_entity();
             ecs::entity e2 = w.create_entity();
 
@@ -1182,108 +1191,96 @@ TEST_CASE("registry") {
 
             auto e = w.create_entity();
 
-            REQUIRE(ecs::filter<>{}(e));
-            REQUIRE(ecs::filter<position_c>{}(e));
-            REQUIRE(ecs::filter<velocity_c>{}(e));
-            REQUIRE(ecs::filter<position_c, velocity_c>{}(e));
+            REQUIRE((!ecs::exists<position_c>{})(e));
+            REQUIRE((!ecs::exists<velocity_c>{})(e));
 
-            REQUIRE(ecs::filter_any<>{}(e));
-            REQUIRE(ecs::filter_any<position_c>{}(e));
-            REQUIRE(ecs::filter_any<velocity_c>{}(e));
-            REQUIRE(ecs::filter_any<position_c, velocity_c>{}(e));
+            REQUIRE((!ecs::exists_any<>{})(e));
+            REQUIRE((!ecs::exists_any<position_c>{})(e));
+            REQUIRE((!ecs::exists_any<velocity_c>{})(e));
+            REQUIRE((!ecs::exists_any<position_c, velocity_c>{})(e));
 
-            REQUIRE_FALSE(ecs::filter_all<>{}(e));
-            REQUIRE(ecs::filter_all<position_c>{}(e));
-            REQUIRE(ecs::filter_all<velocity_c>{}(e));
-            REQUIRE(ecs::filter_all<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE((!ecs::exists_all<>{})(e));
+            REQUIRE((!ecs::exists_all<position_c>{})(e));
+            REQUIRE((!ecs::exists_all<velocity_c>{})(e));
+            REQUIRE((!ecs::exists_all<position_c, velocity_c>{})(e));
 
             e.assign_component<position_c>();
 
-            REQUIRE(ecs::filter<>{}(e));
-            REQUIRE_FALSE(ecs::filter<position_c>{}(e));
-            REQUIRE(ecs::filter<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::filter<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE((!ecs::exists<position_c>{})(e));
+            REQUIRE((!ecs::exists<velocity_c>{})(e));
 
-            REQUIRE(ecs::filter_any<>{}(e));
-            REQUIRE_FALSE(ecs::filter_any<position_c>{}(e));
-            REQUIRE(ecs::filter_any<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::filter_any<position_c, velocity_c>{}(e));
+            REQUIRE((!ecs::exists_any<>{})(e));
+            REQUIRE_FALSE((!ecs::exists_any<position_c>{})(e));
+            REQUIRE((!ecs::exists_any<velocity_c>{})(e));
+            REQUIRE_FALSE((!ecs::exists_any<position_c, velocity_c>{})(e));
 
-            REQUIRE_FALSE(ecs::filter_all<>{}(e));
-            REQUIRE_FALSE(ecs::filter_all<position_c>{}(e));
-            REQUIRE(ecs::filter_all<velocity_c>{}(e));
-            REQUIRE(ecs::filter_all<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE((!ecs::exists_all<>{})(e));
+            REQUIRE_FALSE((!ecs::exists_all<position_c>{})(e));
+            REQUIRE((!ecs::exists_all<velocity_c>{})(e));
+            REQUIRE((!ecs::exists_all<position_c, velocity_c>{})(e));
 
             e.assign_component<velocity_c>();
 
-            REQUIRE(ecs::filter<>{}(e));
-            REQUIRE_FALSE(ecs::filter<position_c>{}(e));
-            REQUIRE_FALSE(ecs::filter<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::filter<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE((!ecs::exists<position_c>{})(e));
+            REQUIRE_FALSE((!ecs::exists<velocity_c>{})(e));
 
-            REQUIRE(ecs::filter_any<>{}(e));
-            REQUIRE_FALSE(ecs::filter_any<position_c>{}(e));
-            REQUIRE_FALSE(ecs::filter_any<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::filter_any<position_c, velocity_c>{}(e));
+            REQUIRE((!ecs::exists_any<>{})(e));
+            REQUIRE_FALSE((!ecs::exists_any<position_c>{})(e));
+            REQUIRE_FALSE((!ecs::exists_any<velocity_c>{})(e));
+            REQUIRE_FALSE((!ecs::exists_any<position_c, velocity_c>{})(e));
 
-            REQUIRE_FALSE(ecs::filter_all<>{}(e));
-            REQUIRE_FALSE(ecs::filter_all<position_c>{}(e));
-            REQUIRE_FALSE(ecs::filter_all<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::filter_all<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE((!ecs::exists_all<>{})(e));
+            REQUIRE_FALSE((!ecs::exists_all<position_c>{})(e));
+            REQUIRE_FALSE((!ecs::exists_all<velocity_c>{})(e));
+            REQUIRE_FALSE((!ecs::exists_all<position_c, velocity_c>{})(e));
         }
         {
             ecs::registry w;
 
             auto e = w.create_entity();
 
-            REQUIRE(ecs::require<>{}(e));
-            REQUIRE_FALSE(ecs::require<position_c>{}(e));
-            REQUIRE_FALSE(ecs::require<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::require<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::exists<position_c>{}(e));
+            REQUIRE_FALSE(ecs::exists<velocity_c>{}(e));
 
-            REQUIRE_FALSE(ecs::require_any<>{}(e));
-            REQUIRE_FALSE(ecs::require_any<position_c>{}(e));
-            REQUIRE_FALSE(ecs::require_any<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::require_any<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_any<>{}(e));
+            REQUIRE_FALSE(ecs::exists_any<position_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_any<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_any<position_c, velocity_c>{}(e));
 
-            REQUIRE(ecs::require_all<>{}(e));
-            REQUIRE_FALSE(ecs::require_all<position_c>{}(e));
-            REQUIRE_FALSE(ecs::require_all<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::require_all<position_c, velocity_c>{}(e));
+            REQUIRE(ecs::exists_all<>{}(e));
+            REQUIRE_FALSE(ecs::exists_all<position_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_all<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_all<position_c, velocity_c>{}(e));
 
             e.assign_component<position_c>();
 
-            REQUIRE(ecs::require<>{}(e));
-            REQUIRE(ecs::require<position_c>{}(e));
-            REQUIRE_FALSE(ecs::require<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::require<position_c, velocity_c>{}(e));
+            REQUIRE(ecs::exists<position_c>{}(e));
+            REQUIRE_FALSE(ecs::exists<velocity_c>{}(e));
 
-            REQUIRE_FALSE(ecs::require_any<>{}(e));
-            REQUIRE(ecs::require_any<position_c>{}(e));
-            REQUIRE_FALSE(ecs::require_any<velocity_c>{}(e));
-            REQUIRE(ecs::require_any<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_any<>{}(e));
+            REQUIRE(ecs::exists_any<position_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_any<velocity_c>{}(e));
+            REQUIRE(ecs::exists_any<position_c, velocity_c>{}(e));
 
-            REQUIRE(ecs::require_all<>{}(e));
-            REQUIRE(ecs::require_all<position_c>{}(e));
-            REQUIRE_FALSE(ecs::require_all<velocity_c>{}(e));
-            REQUIRE_FALSE(ecs::require_all<position_c, velocity_c>{}(e));
+            REQUIRE(ecs::exists_all<>{}(e));
+            REQUIRE(ecs::exists_all<position_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_all<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_all<position_c, velocity_c>{}(e));
 
             e.assign_component<velocity_c>();
 
-            REQUIRE(ecs::require<>{}(e));
-            REQUIRE(ecs::require<position_c>{}(e));
-            REQUIRE(ecs::require<velocity_c>{}(e));
-            REQUIRE(ecs::require<position_c, velocity_c>{}(e));
+            REQUIRE(ecs::exists<position_c>{}(e));
+            REQUIRE(ecs::exists<velocity_c>{}(e));
 
-            REQUIRE_FALSE(ecs::require_any<>{}(e));
-            REQUIRE(ecs::require_any<position_c>{}(e));
-            REQUIRE(ecs::require_any<velocity_c>{}(e));
-            REQUIRE(ecs::require_any<position_c, velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::exists_any<>{}(e));
+            REQUIRE(ecs::exists_any<position_c>{}(e));
+            REQUIRE(ecs::exists_any<velocity_c>{}(e));
+            REQUIRE(ecs::exists_any<position_c, velocity_c>{}(e));
 
-            REQUIRE(ecs::require_all<>{}(e));
-            REQUIRE(ecs::require_all<position_c>{}(e));
-            REQUIRE(ecs::require_all<velocity_c>{}(e));
-            REQUIRE(ecs::require_all<position_c, velocity_c>{}(e));
+            REQUIRE(ecs::exists_all<>{}(e));
+            REQUIRE(ecs::exists_all<position_c>{}(e));
+            REQUIRE(ecs::exists_all<velocity_c>{}(e));
+            REQUIRE(ecs::exists_all<position_c, velocity_c>{}(e));
         }
         {
             ecs::registry w;
@@ -1300,7 +1297,7 @@ TEST_CASE("registry") {
             w.for_each_component<position_c>([
             ](ecs::entity, position_c& p){
                 p = position_c{5,5};
-            }, ecs::require<movable_c>{});
+            }, ecs::exists<movable_c>{});
 
             REQUIRE(e1.get_component<position_c>() == position_c(5,5));
             REQUIRE(e2.get_component<position_c>() == position_c(0,0));
@@ -1309,7 +1306,7 @@ TEST_CASE("registry") {
             ](ecs::entity, position_c& p, const velocity_c& v){
                 p.x += v.x;
                 p.y += v.y;
-            }, ecs::filter<movable_c>{});
+            }, !ecs::exists<movable_c>{});
 
             REQUIRE(e1.get_component<position_c>() == position_c(5,5));
             REQUIRE(e2.get_component<position_c>() == position_c(1,2));
@@ -1321,7 +1318,7 @@ TEST_CASE("registry") {
             ](ecs::entity, position_c& p, const velocity_c& v){
                 p.x += v.x;
                 p.y += v.y;
-            }, ecs::require<movable_c>{}, ecs::filter<disabled_c>{});
+            }, ecs::exists<movable_c>{} && !ecs::exists<disabled_c>{});
 
             REQUIRE(e1.get_component<position_c>() == position_c(5,5));
             REQUIRE(e2.get_component<position_c>() == position_c(2,4));
@@ -1343,10 +1340,30 @@ TEST_CASE("registry") {
                 const velocity_c& v = e.get_component<velocity_c>();
                 p.x += v.x;
                 p.y += v.y;
-            }, ecs::filter<disabled_c>{}, ecs::require<position_c, velocity_c>{});
+            }, !ecs::exists<disabled_c>{} && ecs::exists_all<position_c, velocity_c>{});
 
             REQUIRE(e1.get_component<position_c>() == position_c(1,2));
             REQUIRE(e2.get_component<position_c>() == position_c(0,0));
+        }
+        {
+            ecs::registry w;
+
+            struct ignore_disabled {};
+
+            auto e1 = w.create_entity();
+            ecs::entity_filler(e1)
+                .component<disabled_c>()
+                .component<ignore_disabled>()
+                .component<position_c>(0,0)
+                .component<velocity_c>(1,2);
+
+            w.for_joined_components<position_c, velocity_c>([
+            ](ecs::entity, position_c& p, const velocity_c& v){
+                p.x += v.x;
+                p.y += v.y;
+            }, !ecs::exists<disabled_c>{} || ecs::exists<ignore_disabled>{});
+
+            REQUIRE(e1.get_component<position_c>() == position_c(1,2));
         }
     }
     SECTION("systems") {
@@ -1593,7 +1610,7 @@ TEST_CASE("example") {
             >([](ecs::entity, position& p, const velocity& v) {
                 p.x += v.dx;
                 p.y += v.dy;
-            }, ecs::require<movable>{}, ecs::filter<disabled>{});
+            }, ecs::exists<movable>{} && !ecs::exists<disabled>{});
         }
     };
 
@@ -1608,7 +1625,7 @@ TEST_CASE("example") {
             >([this](ecs::entity, velocity& v) {
                 v.dx += gravity_;
                 v.dy += gravity_;
-            }, ecs::filter<disabled>{});
+            }, !ecs::exists<disabled>{});
         }
     private:
         float gravity_{};

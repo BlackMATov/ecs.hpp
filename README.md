@@ -67,7 +67,7 @@ public:
         >([](ecs::entity, position& p, const velocity& v) {
             p.x += v.dx;
             p.y += v.dy;
-        }, ecs::require<movable>{}, ecs::filter<disabled>{});
+        }, ecs::exists<movable>{} && !ecs::exists<disabled>{});
     }
 };
 
@@ -82,7 +82,7 @@ public:
         >([this](ecs::entity e, velocity& v) {
             v.dx += gravity_;
             v.dy += gravity_;
-        }, ecs::filter<disabled>{});
+        }, !ecs::exists<disabled>{});
     }
 private:
     float gravity_{};
