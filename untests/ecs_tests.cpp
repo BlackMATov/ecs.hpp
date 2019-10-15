@@ -437,6 +437,15 @@ TEST_CASE("registry") {
     SECTION("components") {
         {
             ecs::registry w;
+            ecs::entity e{w};
+            ecs::component<position_c> c1{e};
+            ecs::const_component<velocity_c> c2{e};
+            REQUIRE_FALSE(e.valid());
+            REQUIRE_FALSE(c1.valid());
+            REQUIRE_FALSE(c2.valid());
+        }
+        {
+            ecs::registry w;
             ecs::entity e1 = w.create_entity();
             ecs::entity e2 = w.create_entity();
 

@@ -859,7 +859,7 @@ namespace ecs_hpp
 {
     class entity final {
     public:
-        entity(registry& owner) noexcept;
+        explicit entity(registry& owner) noexcept;
         entity(registry& owner, entity_id id) noexcept;
 
         entity(const entity&) = default;
@@ -952,7 +952,7 @@ namespace ecs_hpp
     public:
         const_entity(const entity& ent) noexcept;
 
-        const_entity(const registry& owner) noexcept;
+        explicit const_entity(const registry& owner) noexcept;
         const_entity(const registry& owner, entity_id id) noexcept;
 
         const_entity(const const_entity&) = default;
@@ -1019,7 +1019,7 @@ namespace ecs_hpp
     template < typename T >
     class component final {
     public:
-        component(const entity& owner) noexcept;
+        explicit component(const entity& owner) noexcept;
 
         component(const component&) = default;
         component& operator=(const component&) = default;
@@ -1030,7 +1030,7 @@ namespace ecs_hpp
         entity& owner() noexcept;
         const entity& owner() const noexcept;
 
-        bool remove() noexcept;
+        bool valid() const noexcept;
         bool exists() const noexcept;
 
         template < typename... Args >
@@ -1038,6 +1038,8 @@ namespace ecs_hpp
 
         template < typename... Args >
         T& ensure(Args&&... args);
+
+        bool remove() noexcept;
 
         T& get();
         const T& get() const;
@@ -1092,7 +1094,7 @@ namespace ecs_hpp
     class const_component final {
     public:
         const_component(const component<T>& comp) noexcept;
-        const_component(const const_entity& owner) noexcept;
+        explicit const_component(const const_entity& owner) noexcept;
 
         const_component(const const_component&) = default;
         const_component& operator=(const const_component&) = default;
@@ -1102,6 +1104,7 @@ namespace ecs_hpp
 
         const const_entity& owner() const noexcept;
 
+        bool valid() const noexcept;
         bool exists() const noexcept;
 
         const T& get() const;
@@ -1283,7 +1286,6 @@ namespace ecs_hpp
         };
     public:
         registry() = default;
-        ~registry() noexcept = default;
 
         registry(const registry& other) = delete;
         registry& operator=(const registry& other) = delete;
@@ -1788,8 +1790,8 @@ namespace ecs_hpp
     }
 
     template < typename T >
-    bool component<T>::remove() noexcept {
-        return owner_.remove_component<T>();
+    bool component<T>::valid() const noexcept {
+        return owner_.valid();
     }
 
     template < typename T >
@@ -1800,15 +1802,18 @@ namespace ecs_hpp
     template < typename T >
     template < typename... Args >
     T& component<T>::assign(Args&&... args) {
-        return owner_.assign_component<T>(
-            std::forward<Args>(args)...);
+        return owner_.assign_component<T>(std::forward<Args>(args)...);
     }
 
     template < typename T >
     template < typename... Args >
     T& component<T>::ensure(Args&&... args) {
-        return owner_.ensure_component<T>(
-            std::forward<Args>(args)...);
+        return owner_.ensure_component<T>(std::forward<Args>(args)...);
+    }
+
+    template < typename T >
+    bool component<T>::remove() noexcept {
+        return owner_.remove_component<T>();
     }
 
     template < typename T >
@@ -1901,6 +1906,11 @@ namespace ecs_hpp
     template < typename T >
     const const_entity& const_component<T>::owner() const noexcept {
         return owner_;
+    }
+
+    template < typename T >
+    bool const_component<T>::valid() const noexcept {
+        return owner_.valid();
     }
 
     template < typename T >
@@ -2212,12 +2222,12 @@ namespace ecs_hpp
 
     template < typename T >
     component<T> registry::wrap_component(const const_uentity& ent) noexcept {
-        return {wrap_entity(ent)};
+        return component<T>{wrap_entity(ent)};
     }
 
     template < typename T >
     const_component<T> registry::wrap_component(const const_uentity& ent) const noexcept {
-        return {wrap_entity(ent)};
+        return const_component<T>{wrap_entity(ent)};
     }
 
     inline entity registry::create_entity() {
