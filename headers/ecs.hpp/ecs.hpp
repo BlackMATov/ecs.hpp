@@ -42,24 +42,26 @@ namespace ecs_hpp
     class system;
     class registry;
 
+    template < typename T >
+    class exists;
     template < typename... Ts >
-    class filter_any;
+    class exists_any;
     template < typename... Ts >
-    class filter_all;
+    class exists_all;
 
+    template < typename T >
+    class option_neg;
     template < typename... Ts >
-    class require_any;
+    class option_conj;
     template < typename... Ts >
-    class require_all;
-
-    template < typename... Ts >
-    using filter = filter_any<Ts...>;
-    template < typename... Ts >
-    using require = require_all<Ts...>;
+    class option_disj;
 
     class entity_filler;
     class registry_filler;
+}
 
+namespace ecs_hpp
+{
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
     using priority_t = std::int32_t;
@@ -1461,52 +1463,149 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
-// filter
+// options
 //
 // -----------------------------------------------------------------------------
 
 namespace ecs_hpp
 {
+    //
+    // traits
+    //
+
+    template < typename T >
+    struct option {
+        static constexpr bool instance = false;
+    };
+
+    template < typename T >
+    struct option<exists<T>> {
+        static constexpr bool instance = true;
+    };
+
     template < typename... Ts >
-    class filter_any final {
+    struct option<exists_any<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename... Ts >
+    struct option<exists_all<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename T >
+    struct option<option_neg<T>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename... Ts >
+    struct option<option_conj<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    template < typename... Ts >
+    struct option<option_disj<Ts...>> {
+        static constexpr bool instance = true;
+    };
+
+    //
+    // options
+    //
+
+    template < typename T >
+    class exists final {
     public:
-        bool operator()(const const_entity& e) const noexcept {
-            return !(... || e.exists_component<Ts>());
+        bool operator()(const const_entity& e) const {
+            return e.exists_component<T>();
         }
     };
 
     template < typename... Ts >
-    class filter_all final {
+    class exists_any final {
     public:
-        bool operator()(const const_entity& e) const noexcept {
-            return !(... && e.exists_component<Ts>());
-        }
-    };
-}
-
-// -----------------------------------------------------------------------------
-//
-// require
-//
-// -----------------------------------------------------------------------------
-
-namespace ecs_hpp
-{
-    template < typename... Ts >
-    class require_any final {
-    public:
-        bool operator()(const const_entity& e) const noexcept {
+        bool operator()(const const_entity& e) const {
             return (... || e.exists_component<Ts>());
         }
     };
 
     template < typename... Ts >
-    class require_all final {
+    class exists_all final {
     public:
-        bool operator()(const const_entity& e) const noexcept {
+        bool operator()(const const_entity& e) const {
             return (... && e.exists_component<Ts>());
         }
     };
+
+    //
+    // combinators
+    //
+
+    template < typename T >
+    class option_neg final {
+    public:
+        option_neg(T opt)
+        : opt_(std::move(opt)) {}
+
+        bool operator()(const const_entity& e) const {
+            return !opt_(e);
+        }
+    private:
+        T opt_;
+    };
+
+    template < typename... Ts >
+    class option_conj final {
+    public:
+        option_conj(Ts... opts)
+        : opts_(std::make_tuple(std::move(opts)...)) {}
+
+        bool operator()(const const_entity& e) const {
+            return std::apply([&e](auto&&... opts){
+                return (... && opts(e));
+            }, opts_);
+        }
+    private:
+        std::tuple<Ts...> opts_;
+    };
+
+    template < typename... Ts >
+    class option_disj final {
+    public:
+        option_disj(Ts... opts)
+        : opts_(std::make_tuple(std::move(opts)...)) {}
+
+        bool operator()(const const_entity& e) const {
+            return std::apply([&e](auto&&... opts){
+                return (... || opts(e));
+            }, opts_);
+        }
+    private:
+        std::tuple<Ts...> opts_;
+    };
+
+    //
+    // operators
+    //
+
+    template < typename A
+             , typename = std::enable_if_t<option<A>::instance>>
+    option_neg<std::decay_t<A>> operator!(A&& a) {
+        return {std::forward<A>(a)};
+    }
+
+    template < typename A, typename B
+             , typename = std::enable_if_t<option<A>::instance>
+             , typename = std::enable_if_t<option<B>::instance> >
+    option_conj<std::decay_t<A>, std::decay_t<B>> operator&&(A&& a, B&& b) {
+        return {std::forward<A>(a), std::forward<B>(b)};
+    }
+
+    template < typename A, typename B
+             , typename = std::enable_if_t<option<A>::instance>
+             , typename = std::enable_if_t<option<B>::instance> >
+    option_disj<std::decay_t<A>, std::decay_t<B>> operator||(A&& a, B&& b) {
+        return {std::forward<A>(a), std::forward<B>(b)};
+    }
 }
 
 // -----------------------------------------------------------------------------
