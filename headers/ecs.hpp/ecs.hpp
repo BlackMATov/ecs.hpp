@@ -42,6 +42,21 @@ namespace ecs_hpp
     class system;
     class registry;
 
+    template < typename... Ts >
+    class filter_any;
+    template < typename... Ts >
+    class filter_all;
+
+    template < typename... Ts >
+    class require_any;
+    template < typename... Ts >
+    class require_all;
+
+    template < typename... Ts >
+    using filter = filter_any<Ts...>;
+    template < typename... Ts >
+    using require = require_all<Ts...>;
+
     class entity_filler;
     class registry_filler;
 
@@ -656,11 +671,11 @@ namespace ecs_hpp
             template < typename... Args >
             T& assign(entity_id id, Args&&... args) {
                 if ( T* value = components_.find(id) ) {
-                    *value = T(std::forward<Args>(args)...);
+                    *value = T{std::forward<Args>(args)...};
                     return *value;
                 }
                 assert(!components_locker_.is_locked());
-                return *components_.insert(id, T(std::forward<Args>(args)...)).first;
+                return *components_.insert(id, T{std::forward<Args>(args)...}).first;
             }
 
             template < typename... Args >
@@ -669,7 +684,7 @@ namespace ecs_hpp
                     return *value;
                 }
                 assert(!components_locker_.is_locked());
-                return *components_.insert(id, T(std::forward<Args>(args)...)).first;
+                return *components_.insert(id, T{std::forward<Args>(args)...}).first;
             }
 
             bool exists(entity_id id) const noexcept {
@@ -1330,20 +1345,20 @@ namespace ecs_hpp
         std::size_t entity_count() const noexcept;
         std::size_t entity_component_count(const const_uentity& ent) const noexcept;
 
-        template < typename F >
-        void for_each_entity(F&& f);
-        template < typename F >
-        void for_each_entity(F&& f) const;
+        template < typename F, typename... Opts >
+        void for_each_entity(F&& f, Opts&&... opts);
+        template < typename F, typename... Opts >
+        void for_each_entity(F&& f, Opts&&... opts) const;
 
-        template < typename T, typename F >
-        void for_each_component(F&& f);
-        template < typename T, typename F >
-        void for_each_component(F&& f) const;
+        template < typename T, typename F, typename... Opts >
+        void for_each_component(F&& f, Opts&&... opts);
+        template < typename T, typename F, typename... Opts >
+        void for_each_component(F&& f, Opts&&... opts) const;
 
-        template < typename... Ts, typename F >
-        void for_joined_components(F&& f);
-        template < typename... Ts, typename F >
-        void for_joined_components(F&& f) const;
+        template < typename... Ts, typename F, typename... Opts >
+        void for_joined_components(F&& f, Opts&&... opts);
+        template < typename... Ts, typename F, typename... Opts >
+        void for_joined_components(F&& f, Opts&&... opts) const;
 
         template < typename T, typename... Args >
         void add_system(priority_t priority, Args&&... args);
@@ -1374,20 +1389,24 @@ namespace ecs_hpp
         template < typename T
                  , typename... Ts
                  , typename F
+                 , typename... Opts
                  , std::size_t I
                  , std::size_t... Is >
         void for_joined_components_impl_(
             std::index_sequence<I, Is...>,
-            F&& f);
+            F&& f,
+            Opts&&... opts);
 
         template < typename T
                  , typename... Ts
                  , typename F
+                 , typename... Opts
                  , std::size_t I
                  , std::size_t... Is >
         void for_joined_components_impl_(
             std::index_sequence<I, Is...>,
-            F&& f) const;
+            F&& f,
+            Opts&&... opts) const;
 
         template < typename T
                  , typename... Ts
@@ -1435,6 +1454,56 @@ namespace ecs_hpp
 
         using system_uptr = std::unique_ptr<system>;
         std::vector<std::pair<priority_t, system_uptr>> systems_;
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
+// filter
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename... Ts >
+    class filter_any final {
+    public:
+        bool operator()(const const_entity& e) const noexcept {
+            return !(... || e.exists_component<Ts>());
+        }
+    };
+
+    template < typename... Ts >
+    class filter_all final {
+    public:
+        bool operator()(const const_entity& e) const noexcept {
+            return !(... && e.exists_component<Ts>());
+        }
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
+// require
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename... Ts >
+    class require_any final {
+    public:
+        bool operator()(const const_entity& e) const noexcept {
+            return (... || e.exists_component<Ts>());
+        }
+    };
+
+    template < typename... Ts >
+    class require_all final {
+    public:
+        bool operator()(const const_entity& e) const noexcept {
+            return (... && e.exists_component<Ts>());
+        }
     };
 }
 
@@ -1925,7 +1994,7 @@ namespace ecs_hpp
         template < typename T, typename... Args >
         void typed_applier_with_args<T, Args...>::apply_to_component(T& component) const {
             std::apply([&component](const Args&... args){
-                component = T(args...);
+                component = T{args...};
             }, args_);
         }
     }
@@ -2355,52 +2424,62 @@ namespace ecs_hpp
         return component_count;
     }
 
-    template < typename F >
-    void registry::for_each_entity(F&& f) {
+    template < typename F, typename... Opts >
+    void registry::for_each_entity(F&& f, Opts&&... opts) {
         detail::incremental_lock_guard lock(entity_ids_locker_);
-        for ( const auto id : entity_ids_ ) {
-            f({*this, id});
+        for ( const auto e : entity_ids_ ) {
+            if ( uentity ent{*this, e}; (... && opts(ent)) ) {
+                f(ent);
+            }
         }
     }
 
-    template < typename F >
-    void registry::for_each_entity(F&& f) const {
+    template < typename F, typename... Opts >
+    void registry::for_each_entity(F&& f, Opts&&... opts) const {
         detail::incremental_lock_guard lock(entity_ids_locker_);
-        for ( const auto id : entity_ids_ ) {
-            f({*this, id});
+        for ( const auto e : entity_ids_ ) {
+            if ( const_uentity ent{*this, e}; (... && opts(ent)) ) {
+                f(ent);
+            }
         }
     }
 
-    template < typename T, typename F >
-    void registry::for_each_component(F&& f) {
+    template < typename T, typename F, typename... Opts >
+    void registry::for_each_component(F&& f, Opts&&... opts) {
         if ( detail::component_storage<T>* storage = find_storage_<T>() ) {
-            storage->for_each_component([this, &f](const entity_id e, T& t){
-                f(uentity{*this, e}, t);
+            storage->for_each_component([this, &f, &opts...](const entity_id e, T& t){
+                if ( uentity ent{*this, e}; (... && opts(ent)) ) {
+                    f(ent, t);
+                }
             });
         }
     }
 
-    template < typename T, typename F >
-    void registry::for_each_component(F&& f) const {
+    template < typename T, typename F, typename... Opts >
+    void registry::for_each_component(F&& f, Opts&&... opts) const {
         if ( const detail::component_storage<T>* storage = find_storage_<T>() ) {
-            storage->for_each_component([this, &f](const entity_id e, const T& t){
-                f(const_uentity{*this, e}, t);
+            storage->for_each_component([this, &f, &opts...](const entity_id e, const T& t){
+                if ( const_uentity ent{*this, e}; (... && opts(ent)) ) {
+                    f(ent, t);
+                }
             });
         }
     }
 
-    template < typename... Ts, typename F >
-    void registry::for_joined_components(F&& f) {
+    template < typename... Ts, typename F, typename... Opts >
+    void registry::for_joined_components(F&& f, Opts&&... opts) {
         for_joined_components_impl_<Ts...>(
             std::make_index_sequence<sizeof...(Ts)>(),
-            std::forward<F>(f));
+            std::forward<F>(f),
+            std::forward<Opts>(opts)...);
     }
 
-    template < typename... Ts, typename F >
-    void registry::for_joined_components(F&& f) const {
+    template < typename... Ts, typename F, typename... Opts >
+    void registry::for_joined_components(F&& f, Opts&&... opts) const {
         for_joined_components_impl_<Ts...>(
             std::make_index_sequence<sizeof...(Ts)>(),
-            std::forward<F>(f));
+            std::forward<F>(f),
+            std::forward<Opts>(opts)...);
     }
 
     template < typename T, typename... Args >
@@ -2498,11 +2577,13 @@ namespace ecs_hpp
     template < typename T
              , typename... Ts
              , typename F
+             , typename... Opts
              , std::size_t I
              , std::size_t... Is >
     void registry::for_joined_components_impl_(
         std::index_sequence<I, Is...>,
-        F&& f)
+        F&& f,
+        Opts&&... opts)
     {
         const auto ss = std::make_tuple(find_storage_<Ts>()...);
         if ( detail::tuple_contains(ss, nullptr) ) {
@@ -2510,17 +2591,19 @@ namespace ecs_hpp
         }
         for_each_component<T>([this, &f, &ss](const uentity& e, T& t) {
             for_joined_components_impl_<Ts...>(e, f, ss, t);
-        });
+        }, std::forward<Opts>(opts)...);
     }
 
     template < typename T
              , typename... Ts
              , typename F
+             , typename... Opts
              , std::size_t I
              , std::size_t... Is >
     void registry::for_joined_components_impl_(
         std::index_sequence<I, Is...>,
-        F&& f) const
+        F&& f,
+        Opts&&... opts) const
     {
         const auto ss = std::make_tuple(find_storage_<Ts>()...);
         if ( detail::tuple_contains(ss, nullptr) ) {
@@ -2528,7 +2611,7 @@ namespace ecs_hpp
         }
         for_each_component<T>([this, &f, &ss](const const_uentity& e, const T& t) {
             std::as_const(*this).for_joined_components_impl_<Ts...>(e, f, ss, t);
-        });
+        }, std::forward<Opts>(opts)...);
     }
 
     template < typename T
