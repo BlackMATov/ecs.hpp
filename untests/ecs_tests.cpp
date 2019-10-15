@@ -1571,61 +1571,67 @@ TEST_CASE("registry") {
 }
 
 TEST_CASE("example") {
-    struct position_component {
-        float x;
-        float y;
-        position_component(float nx, float ny)
-        : x(nx), y(ny) {}
+    struct movable {};
+    struct disabled {};
+
+    struct position {
+        float x{};
+        float y{};
     };
 
-    struct velocity_component {
-        float dx;
-        float dy;
-        velocity_component(float ndx, float ndy)
-        : dx(ndx), dy(ndy) {}
+    struct velocity {
+        float dx{};
+        float dy{};
     };
 
-    class movement_system : public ecs_hpp::system {
+    class movement_system : public ecs::system {
     public:
-        void process(ecs_hpp::registry& owner) override {
+        void process(ecs::registry& owner) override {
             owner.for_joined_components<
-                position_component,
-                velocity_component
-            >([](const ecs_hpp::entity&, position_component& p, const velocity_component& v) {
+                position,
+                velocity
+            >([](ecs::entity, position& p, const velocity& v) {
                 p.x += v.dx;
                 p.y += v.dy;
-            });
+            }, ecs::require<movable>{}, ecs::filter<disabled>{});
         }
     };
 
-    class gravity_system : public ecs_hpp::system {
+    class gravity_system : public ecs::system {
     public:
         gravity_system(float gravity)
         : gravity_(gravity) {}
 
-        void process(ecs_hpp::registry& owner) override {
+        void process(ecs::registry& owner) override {
             owner.for_each_component<
-                velocity_component
-            >([this](const ecs_hpp::entity&, velocity_component& v) {
+                velocity
+            >([this](ecs::entity, velocity& v) {
                 v.dx += gravity_;
                 v.dy += gravity_;
-            });
+            }, ecs::filter<disabled>{});
         }
     private:
-        float gravity_;
+        float gravity_{};
     };
 
-    ecs_hpp::registry world;
-    world.add_system<movement_system>(0);
-    world.add_system<gravity_system>(1, 9.8f);
+    ecs::registry world;
+
+    ecs::registry_filler(world)
+        .system<movement_system>(0)
+        .system<gravity_system>(1, 9.8f);
 
     auto entity_one = world.create_entity();
-    world.assign_component<position_component>(entity_one, 4.f, 2.f);
-    world.assign_component<velocity_component>(entity_one, 10.f, 20.f);
+    ecs::entity_filler(entity_one)
+        .component<movable>()
+        .component<position>(4.f, 2.f)
+        .component<velocity>(10.f, 20.f);
 
     auto entity_two = world.create_entity();
-    entity_two.assign_component<position_component>(4.f, 2.f);
-    entity_two.assign_component<velocity_component>(10.f, 20.f);
+    ecs::entity_filler(entity_two)
+        .component<movable>()
+        .component<disabled>()
+        .component<position>(4.f, 2.f)
+        .component<velocity>(10.f, 20.f);
 
     world.process_all_systems();
 }
