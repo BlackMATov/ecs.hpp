@@ -27,9 +27,11 @@ namespace
         velocity_c(int nx, int ny) : x(nx), y(ny) {}
     };
 
-    struct movable_c {
-    };
-    static_assert(std::is_empty<movable_c>::value, "!!!");
+    struct movable_c{};
+    struct disabled_c{};
+
+    static_assert(std::is_empty_v<movable_c>, "!!!");
+    static_assert(std::is_empty_v<disabled_c>, "!!!");
 
     bool operator==(const position_c& l, const position_c& r) noexcept {
         return l.x == r.x
@@ -203,9 +205,9 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(m.size());
             REQUIRE_FALSE(m.has(42u));
             REQUIRE_THROWS(m.get(42u));
-            REQUIRE_THROWS(as_const(m).get(42u));
+            REQUIRE_THROWS(std::as_const(m).get(42u));
             REQUIRE_FALSE(m.find(42u));
-            REQUIRE_FALSE(as_const(m).find(42u));
+            REQUIRE_FALSE(std::as_const(m).find(42u));
 
             {
                 obj_t o{21u};
@@ -233,20 +235,20 @@ TEST_CASE("detail") {
             REQUIRE(m.get(21u).x == 21u);
             REQUIRE(m.get(42u).x == 42u);
             REQUIRE(m.get(84u).x == 84u);
-            REQUIRE(as_const(m).get(84u).x == 84u);
+            REQUIRE(std::as_const(m).get(84u).x == 84u);
             REQUIRE_THROWS(m.get(11u));
             REQUIRE_THROWS(m.get(25u));
             REQUIRE_THROWS(m.get(99u));
-            REQUIRE_THROWS(as_const(m).get(99u));
+            REQUIRE_THROWS(std::as_const(m).get(99u));
 
             REQUIRE(m.find(21u)->x == 21u);
             REQUIRE(m.find(42u)->x == 42u);
             REQUIRE(m.find(84u)->x == 84u);
-            REQUIRE(as_const(m).find(84u)->x == 84u);
+            REQUIRE(std::as_const(m).find(84u)->x == 84u);
             REQUIRE_FALSE(m.find(11u));
             REQUIRE_FALSE(m.find(25u));
             REQUIRE_FALSE(m.find(99u));
-            REQUIRE_FALSE(as_const(m).find(99u));
+            REQUIRE_FALSE(std::as_const(m).find(99u));
 
             REQUIRE(m.unordered_erase(42u));
             REQUIRE_FALSE(m.unordered_erase(42u));
@@ -527,43 +529,43 @@ TEST_CASE("registry") {
             ecs::const_component<position_c> c2 = w.wrap_component<position_c>(e1);
 
             REQUIRE_FALSE(c1);
-            REQUIRE_FALSE(as_const(c1));
+            REQUIRE_FALSE(std::as_const(c1));
             REQUIRE_FALSE(c2);
-            REQUIRE_FALSE(as_const(c2));
+            REQUIRE_FALSE(std::as_const(c2));
 
             REQUIRE_THROWS_AS(*c1, std::logic_error);
-            REQUIRE_THROWS_AS(*as_const(c1), std::logic_error);
+            REQUIRE_THROWS_AS(*std::as_const(c1), std::logic_error);
             REQUIRE_THROWS_AS(*c2, std::logic_error);
-            REQUIRE_THROWS_AS(*as_const(c2), std::logic_error);
+            REQUIRE_THROWS_AS(*std::as_const(c2), std::logic_error);
 
             c1.assign(1,2);
 
             REQUIRE(c1);
-            REQUIRE(as_const(c1));
+            REQUIRE(std::as_const(c1));
             REQUIRE(c2);
-            REQUIRE(as_const(c2));
+            REQUIRE(std::as_const(c2));
 
             REQUIRE(*c1 == position_c(1,2));
-            REQUIRE(*as_const(c1) == position_c(1,2));
+            REQUIRE(*std::as_const(c1) == position_c(1,2));
             REQUIRE(*c2 == position_c(1,2));
-            REQUIRE(*as_const(c2) == position_c(1,2));
+            REQUIRE(*std::as_const(c2) == position_c(1,2));
 
             REQUIRE(c1->x == 1);
             REQUIRE(c1->y == 2);
-            REQUIRE(as_const(c1)->x == 1);
-            REQUIRE(as_const(c1)->y == 2);
+            REQUIRE(std::as_const(c1)->x == 1);
+            REQUIRE(std::as_const(c1)->y == 2);
 
             REQUIRE(c2->x == 1);
             REQUIRE(c2->y == 2);
-            REQUIRE(as_const(c2)->x == 1);
-            REQUIRE(as_const(c2)->y == 2);
+            REQUIRE(std::as_const(c2)->x == 1);
+            REQUIRE(std::as_const(c2)->y == 2);
 
             c1.remove();
 
             REQUIRE_FALSE(c1);
-            REQUIRE_FALSE(as_const(c1));
+            REQUIRE_FALSE(std::as_const(c1));
             REQUIRE_FALSE(c2);
-            REQUIRE_FALSE(as_const(c2));
+            REQUIRE_FALSE(std::as_const(c2));
         }
         {
             ecs::registry w;
@@ -1174,6 +1176,179 @@ TEST_CASE("registry") {
             });
         }
     }
+    SECTION("options") {
+        {
+            ecs::registry w;
+
+            auto e = w.create_entity();
+
+            REQUIRE(ecs::filter<>{}(e));
+            REQUIRE(ecs::filter<position_c>{}(e));
+            REQUIRE(ecs::filter<velocity_c>{}(e));
+            REQUIRE(ecs::filter<position_c, velocity_c>{}(e));
+
+            REQUIRE(ecs::filter_any<>{}(e));
+            REQUIRE(ecs::filter_any<position_c>{}(e));
+            REQUIRE(ecs::filter_any<velocity_c>{}(e));
+            REQUIRE(ecs::filter_any<position_c, velocity_c>{}(e));
+
+            REQUIRE_FALSE(ecs::filter_all<>{}(e));
+            REQUIRE(ecs::filter_all<position_c>{}(e));
+            REQUIRE(ecs::filter_all<velocity_c>{}(e));
+            REQUIRE(ecs::filter_all<position_c, velocity_c>{}(e));
+
+            e.assign_component<position_c>();
+
+            REQUIRE(ecs::filter<>{}(e));
+            REQUIRE_FALSE(ecs::filter<position_c>{}(e));
+            REQUIRE(ecs::filter<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::filter<position_c, velocity_c>{}(e));
+
+            REQUIRE(ecs::filter_any<>{}(e));
+            REQUIRE_FALSE(ecs::filter_any<position_c>{}(e));
+            REQUIRE(ecs::filter_any<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::filter_any<position_c, velocity_c>{}(e));
+
+            REQUIRE_FALSE(ecs::filter_all<>{}(e));
+            REQUIRE_FALSE(ecs::filter_all<position_c>{}(e));
+            REQUIRE(ecs::filter_all<velocity_c>{}(e));
+            REQUIRE(ecs::filter_all<position_c, velocity_c>{}(e));
+
+            e.assign_component<velocity_c>();
+
+            REQUIRE(ecs::filter<>{}(e));
+            REQUIRE_FALSE(ecs::filter<position_c>{}(e));
+            REQUIRE_FALSE(ecs::filter<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::filter<position_c, velocity_c>{}(e));
+
+            REQUIRE(ecs::filter_any<>{}(e));
+            REQUIRE_FALSE(ecs::filter_any<position_c>{}(e));
+            REQUIRE_FALSE(ecs::filter_any<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::filter_any<position_c, velocity_c>{}(e));
+
+            REQUIRE_FALSE(ecs::filter_all<>{}(e));
+            REQUIRE_FALSE(ecs::filter_all<position_c>{}(e));
+            REQUIRE_FALSE(ecs::filter_all<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::filter_all<position_c, velocity_c>{}(e));
+        }
+        {
+            ecs::registry w;
+
+            auto e = w.create_entity();
+
+            REQUIRE(ecs::require<>{}(e));
+            REQUIRE_FALSE(ecs::require<position_c>{}(e));
+            REQUIRE_FALSE(ecs::require<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::require<position_c, velocity_c>{}(e));
+
+            REQUIRE_FALSE(ecs::require_any<>{}(e));
+            REQUIRE_FALSE(ecs::require_any<position_c>{}(e));
+            REQUIRE_FALSE(ecs::require_any<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::require_any<position_c, velocity_c>{}(e));
+
+            REQUIRE(ecs::require_all<>{}(e));
+            REQUIRE_FALSE(ecs::require_all<position_c>{}(e));
+            REQUIRE_FALSE(ecs::require_all<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::require_all<position_c, velocity_c>{}(e));
+
+            e.assign_component<position_c>();
+
+            REQUIRE(ecs::require<>{}(e));
+            REQUIRE(ecs::require<position_c>{}(e));
+            REQUIRE_FALSE(ecs::require<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::require<position_c, velocity_c>{}(e));
+
+            REQUIRE_FALSE(ecs::require_any<>{}(e));
+            REQUIRE(ecs::require_any<position_c>{}(e));
+            REQUIRE_FALSE(ecs::require_any<velocity_c>{}(e));
+            REQUIRE(ecs::require_any<position_c, velocity_c>{}(e));
+
+            REQUIRE(ecs::require_all<>{}(e));
+            REQUIRE(ecs::require_all<position_c>{}(e));
+            REQUIRE_FALSE(ecs::require_all<velocity_c>{}(e));
+            REQUIRE_FALSE(ecs::require_all<position_c, velocity_c>{}(e));
+
+            e.assign_component<velocity_c>();
+
+            REQUIRE(ecs::require<>{}(e));
+            REQUIRE(ecs::require<position_c>{}(e));
+            REQUIRE(ecs::require<velocity_c>{}(e));
+            REQUIRE(ecs::require<position_c, velocity_c>{}(e));
+
+            REQUIRE_FALSE(ecs::require_any<>{}(e));
+            REQUIRE(ecs::require_any<position_c>{}(e));
+            REQUIRE(ecs::require_any<velocity_c>{}(e));
+            REQUIRE(ecs::require_any<position_c, velocity_c>{}(e));
+
+            REQUIRE(ecs::require_all<>{}(e));
+            REQUIRE(ecs::require_all<position_c>{}(e));
+            REQUIRE(ecs::require_all<velocity_c>{}(e));
+            REQUIRE(ecs::require_all<position_c, velocity_c>{}(e));
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            e1.assign_component<movable_c>();
+            e1.assign_component<position_c>(0,0);
+            e1.assign_component<velocity_c>(1,2);
+
+            auto e2 = w.create_entity();
+            e2.assign_component<position_c>(0,0);
+            e2.assign_component<velocity_c>(1,2);
+
+            w.for_each_component<position_c>([
+            ](ecs::entity, position_c& p){
+                p = position_c{5,5};
+            }, ecs::require<movable_c>{});
+
+            REQUIRE(e1.get_component<position_c>() == position_c(5,5));
+            REQUIRE(e2.get_component<position_c>() == position_c(0,0));
+
+            w.for_joined_components<position_c, velocity_c>([
+            ](ecs::entity, position_c& p, const velocity_c& v){
+                p.x += v.x;
+                p.y += v.y;
+            }, ecs::filter<movable_c>{});
+
+            REQUIRE(e1.get_component<position_c>() == position_c(5,5));
+            REQUIRE(e2.get_component<position_c>() == position_c(1,2));
+
+            e1.assign_component<disabled_c>();
+            e2.assign_component<movable_c>();
+
+            w.for_joined_components<position_c, velocity_c>([
+            ](ecs::entity, position_c& p, const velocity_c& v){
+                p.x += v.x;
+                p.y += v.y;
+            }, ecs::require<movable_c>{}, ecs::filter<disabled_c>{});
+
+            REQUIRE(e1.get_component<position_c>() == position_c(5,5));
+            REQUIRE(e2.get_component<position_c>() == position_c(2,4));
+        }
+        {
+            ecs::registry w;
+
+            auto e1 = w.create_entity();
+            e1.assign_component<position_c>(0,0);
+            e1.assign_component<velocity_c>(1,2);
+
+            auto e2 = w.create_entity();
+            e2.assign_component<disabled_c>();
+            e2.assign_component<position_c>(0,0);
+            e2.assign_component<velocity_c>(1,2);
+
+            w.for_each_entity([](ecs::entity e){
+                position_c& p = e.get_component<position_c>();
+                const velocity_c& v = e.get_component<velocity_c>();
+                p.x += v.x;
+                p.y += v.y;
+            }, ecs::filter<disabled_c>{}, ecs::require<position_c, velocity_c>{});
+
+            REQUIRE(e1.get_component<position_c>() == position_c(1,2));
+            REQUIRE(e2.get_component<position_c>() == position_c(0,0));
+        }
+    }
     SECTION("systems") {
         {
             class movement_system : public ecs::system {
@@ -1396,61 +1571,67 @@ TEST_CASE("registry") {
 }
 
 TEST_CASE("example") {
-    struct position_component {
-        float x;
-        float y;
-        position_component(float nx, float ny)
-        : x(nx), y(ny) {}
+    struct movable {};
+    struct disabled {};
+
+    struct position {
+        float x{};
+        float y{};
     };
 
-    struct velocity_component {
-        float dx;
-        float dy;
-        velocity_component(float ndx, float ndy)
-        : dx(ndx), dy(ndy) {}
+    struct velocity {
+        float dx{};
+        float dy{};
     };
 
-    class movement_system : public ecs_hpp::system {
+    class movement_system : public ecs::system {
     public:
-        void process(ecs_hpp::registry& owner) override {
+        void process(ecs::registry& owner) override {
             owner.for_joined_components<
-                position_component,
-                velocity_component
-            >([](const ecs_hpp::entity&, position_component& p, const velocity_component& v) {
+                position,
+                velocity
+            >([](ecs::entity, position& p, const velocity& v) {
                 p.x += v.dx;
                 p.y += v.dy;
-            });
+            }, ecs::require<movable>{}, ecs::filter<disabled>{});
         }
     };
 
-    class gravity_system : public ecs_hpp::system {
+    class gravity_system : public ecs::system {
     public:
         gravity_system(float gravity)
         : gravity_(gravity) {}
 
-        void process(ecs_hpp::registry& owner) override {
+        void process(ecs::registry& owner) override {
             owner.for_each_component<
-                velocity_component
-            >([this](const ecs_hpp::entity&, velocity_component& v) {
+                velocity
+            >([this](ecs::entity, velocity& v) {
                 v.dx += gravity_;
                 v.dy += gravity_;
-            });
+            }, ecs::filter<disabled>{});
         }
     private:
-        float gravity_;
+        float gravity_{};
     };
 
-    ecs_hpp::registry world;
-    world.add_system<movement_system>(0);
-    world.add_system<gravity_system>(1, 9.8f);
+    ecs::registry world;
+
+    ecs::registry_filler(world)
+        .system<movement_system>(0)
+        .system<gravity_system>(1, 9.8f);
 
     auto entity_one = world.create_entity();
-    world.assign_component<position_component>(entity_one, 4.f, 2.f);
-    world.assign_component<velocity_component>(entity_one, 10.f, 20.f);
+    ecs::entity_filler(entity_one)
+        .component<movable>()
+        .component<position>(4.f, 2.f)
+        .component<velocity>(10.f, 20.f);
 
     auto entity_two = world.create_entity();
-    entity_two.assign_component<position_component>(4.f, 2.f);
-    entity_two.assign_component<velocity_component>(10.f, 20.f);
+    ecs::entity_filler(entity_two)
+        .component<movable>()
+        .component<disabled>()
+        .component<position>(4.f, 2.f)
+        .component<velocity>(10.f, 20.f);
 
     world.process_all_systems();
 }
