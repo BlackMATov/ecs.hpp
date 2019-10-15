@@ -29,7 +29,7 @@ namespace
 
     struct movable_c {
     };
-    static_assert(std::is_empty<movable_c>::value, "!!!");
+    static_assert(std::is_empty_v<movable_c>, "!!!");
 
     bool operator==(const position_c& l, const position_c& r) noexcept {
         return l.x == r.x
@@ -203,9 +203,9 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(m.size());
             REQUIRE_FALSE(m.has(42u));
             REQUIRE_THROWS(m.get(42u));
-            REQUIRE_THROWS(as_const(m).get(42u));
+            REQUIRE_THROWS(std::as_const(m).get(42u));
             REQUIRE_FALSE(m.find(42u));
-            REQUIRE_FALSE(as_const(m).find(42u));
+            REQUIRE_FALSE(std::as_const(m).find(42u));
 
             {
                 obj_t o{21u};
@@ -233,20 +233,20 @@ TEST_CASE("detail") {
             REQUIRE(m.get(21u).x == 21u);
             REQUIRE(m.get(42u).x == 42u);
             REQUIRE(m.get(84u).x == 84u);
-            REQUIRE(as_const(m).get(84u).x == 84u);
+            REQUIRE(std::as_const(m).get(84u).x == 84u);
             REQUIRE_THROWS(m.get(11u));
             REQUIRE_THROWS(m.get(25u));
             REQUIRE_THROWS(m.get(99u));
-            REQUIRE_THROWS(as_const(m).get(99u));
+            REQUIRE_THROWS(std::as_const(m).get(99u));
 
             REQUIRE(m.find(21u)->x == 21u);
             REQUIRE(m.find(42u)->x == 42u);
             REQUIRE(m.find(84u)->x == 84u);
-            REQUIRE(as_const(m).find(84u)->x == 84u);
+            REQUIRE(std::as_const(m).find(84u)->x == 84u);
             REQUIRE_FALSE(m.find(11u));
             REQUIRE_FALSE(m.find(25u));
             REQUIRE_FALSE(m.find(99u));
-            REQUIRE_FALSE(as_const(m).find(99u));
+            REQUIRE_FALSE(std::as_const(m).find(99u));
 
             REQUIRE(m.unordered_erase(42u));
             REQUIRE_FALSE(m.unordered_erase(42u));
@@ -527,43 +527,43 @@ TEST_CASE("registry") {
             ecs::const_component<position_c> c2 = w.wrap_component<position_c>(e1);
 
             REQUIRE_FALSE(c1);
-            REQUIRE_FALSE(as_const(c1));
+            REQUIRE_FALSE(std::as_const(c1));
             REQUIRE_FALSE(c2);
-            REQUIRE_FALSE(as_const(c2));
+            REQUIRE_FALSE(std::as_const(c2));
 
             REQUIRE_THROWS_AS(*c1, std::logic_error);
-            REQUIRE_THROWS_AS(*as_const(c1), std::logic_error);
+            REQUIRE_THROWS_AS(*std::as_const(c1), std::logic_error);
             REQUIRE_THROWS_AS(*c2, std::logic_error);
-            REQUIRE_THROWS_AS(*as_const(c2), std::logic_error);
+            REQUIRE_THROWS_AS(*std::as_const(c2), std::logic_error);
 
             c1.assign(1,2);
 
             REQUIRE(c1);
-            REQUIRE(as_const(c1));
+            REQUIRE(std::as_const(c1));
             REQUIRE(c2);
-            REQUIRE(as_const(c2));
+            REQUIRE(std::as_const(c2));
 
             REQUIRE(*c1 == position_c(1,2));
-            REQUIRE(*as_const(c1) == position_c(1,2));
+            REQUIRE(*std::as_const(c1) == position_c(1,2));
             REQUIRE(*c2 == position_c(1,2));
-            REQUIRE(*as_const(c2) == position_c(1,2));
+            REQUIRE(*std::as_const(c2) == position_c(1,2));
 
             REQUIRE(c1->x == 1);
             REQUIRE(c1->y == 2);
-            REQUIRE(as_const(c1)->x == 1);
-            REQUIRE(as_const(c1)->y == 2);
+            REQUIRE(std::as_const(c1)->x == 1);
+            REQUIRE(std::as_const(c1)->y == 2);
 
             REQUIRE(c2->x == 1);
             REQUIRE(c2->y == 2);
-            REQUIRE(as_const(c2)->x == 1);
-            REQUIRE(as_const(c2)->y == 2);
+            REQUIRE(std::as_const(c2)->x == 1);
+            REQUIRE(std::as_const(c2)->y == 2);
 
             c1.remove();
 
             REQUIRE_FALSE(c1);
-            REQUIRE_FALSE(as_const(c1));
+            REQUIRE_FALSE(std::as_const(c1));
             REQUIRE_FALSE(c2);
-            REQUIRE_FALSE(as_const(c2));
+            REQUIRE_FALSE(std::as_const(c2));
         }
         {
             ecs::registry w;
