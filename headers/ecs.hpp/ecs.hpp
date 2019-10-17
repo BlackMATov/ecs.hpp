@@ -285,8 +285,20 @@ namespace ecs_hpp
             incremental_locker() = default;
             ~incremental_locker() noexcept = default;
 
-            incremental_locker(const incremental_locker&) = delete;
-            incremental_locker& operator=(const incremental_locker&) = delete;
+            incremental_locker(incremental_locker&& other) noexcept = default;
+            incremental_locker(const incremental_locker& other) noexcept = default;
+
+            incremental_locker& operator=(incremental_locker&& other) noexcept {
+                assert(!is_locked());
+                (void)other;
+                return *this;
+            }
+
+            incremental_locker& operator=(const incremental_locker& other) noexcept {
+                assert(!is_locked());
+                (void)other;
+                return *this;
+            }
 
             void lock() noexcept {
                 ++lock_count_;
@@ -1295,6 +1307,9 @@ namespace ecs_hpp
 
         registry(const registry& other) = delete;
         registry& operator=(const registry& other) = delete;
+
+        registry(registry&& other) noexcept = default;
+        registry& operator=(registry&& other) noexcept = default;
 
         entity wrap_entity(const const_uentity& ent) noexcept;
         const_entity wrap_entity(const const_uentity& ent) const noexcept;
