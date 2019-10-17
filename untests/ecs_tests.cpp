@@ -1185,6 +1185,102 @@ TEST_CASE("registry") {
             });
         }
     }
+    SECTION("aspects") {
+        {
+            using empty_aspect = ecs::aspect<>;
+
+            ecs::registry w;
+
+            ecs::entity e1 = w.create_entity();
+            REQUIRE(empty_aspect::match_entity(e1));
+
+            ecs::entity e2 = w.create_entity();
+            e2.assign_component<movable_c>();
+            e2.assign_component<position_c>(1,2);
+            REQUIRE(empty_aspect::match_entity(e2));
+
+            ecs::entity e3 = w.create_entity();
+            e3.assign_component<movable_c>();
+            e3.assign_component<position_c>(1,2);
+            e3.assign_component<velocity_c>(3,4);
+            REQUIRE(empty_aspect::match_entity(e3));
+
+            {
+                ecs::entity_id acc{};
+                empty_aspect::for_each_entity(w, [&acc](ecs::entity e){
+                    acc += e.id();
+                }, ecs::exists<movable_c>{});
+                REQUIRE(acc == e2.id() + e3.id());
+            }
+
+            {
+                ecs::entity_id acc{};
+                empty_aspect::for_joined_components(w, [&acc](ecs::entity e){
+                    acc += e.id();
+                }, ecs::exists<movable_c>{});
+                REQUIRE(acc == e2.id() + e3.id());
+            }
+
+            {
+                ecs::entity_id acc{};
+                w.for_each_entity([&acc](ecs::entity e){
+                    acc += e.id();
+                }, empty_aspect::to_option());
+                REQUIRE(acc == e1.id() + e2.id() + e3.id());
+            }
+        }
+        {
+            using movable = ecs::aspect<
+                position_c,
+                velocity_c>;
+
+            ecs::registry w;
+
+            ecs::entity e = w.create_entity();
+            REQUIRE_FALSE(movable::match_entity(e));
+
+            e.assign_component<position_c>(1,2);
+            REQUIRE_FALSE(movable::match_entity(e));
+
+            e.assign_component<velocity_c>(3,4);
+            REQUIRE(movable::match_entity(e));
+
+            ecs::entity e2 = w.create_entity();
+            e2.assign_component<position_c>(1,2);
+
+            movable::for_joined_components(w,
+            [](ecs::entity_id, position_c& p, const velocity_c& v){
+                p.x += v.x;
+                p.y += v.y;
+            });
+
+            movable::for_joined_components(std::as_const(w),
+            [](ecs::entity_id, const position_c& p, const velocity_c& v){
+                const_cast<position_c&>(p).x += v.x;
+                const_cast<position_c&>(p).y += v.y;
+            });
+
+            w.for_each_entity([](ecs::entity e){
+                auto& p = e.get_component<position_c>();
+                const auto& v = e.get_component<velocity_c>();
+                p.x += v.x;
+                p.y += v.y;
+            }, movable::to_option());
+
+            std::as_const(w).for_each_entity([](const ecs::const_entity& e){
+                const auto& p = e.get_component<position_c>();
+                const auto& v = e.get_component<velocity_c>();
+                const_cast<position_c&>(p).x += v.x;
+                const_cast<position_c&>(p).y += v.y;
+            }, movable::to_option());
+
+            REQUIRE(e.get_component<position_c>().x == 1 + 3*4);
+            REQUIRE(e.get_component<position_c>().y == 2 + 4*4);
+
+            REQUIRE(e2.get_component<position_c>().x == 1);
+            REQUIRE(e2.get_component<position_c>().y == 2);
+        }
+    }
     SECTION("options") {
         {
             ecs::registry w;

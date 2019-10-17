@@ -55,6 +55,10 @@ namespace ecs_hpp
     class option_conj;
     template < typename... Ts >
     class option_disj;
+    class option_bool;
+
+    template < typename... Ts >
+    class aspect;
 
     class entity_filler;
     class registry_filler;
@@ -1390,6 +1394,18 @@ namespace ecs_hpp
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
 
+        template < typename F, typename... Opts >
+        void for_joined_components_impl_(
+            std::index_sequence<>,
+            F&& f,
+            Opts&&... opts);
+
+        template < typename F, typename... Opts >
+        void for_joined_components_impl_(
+            std::index_sequence<>,
+            F&& f,
+            Opts&&... opts) const;
+
         template < typename T
                  , typename... Ts
                  , typename F
@@ -1508,6 +1524,11 @@ namespace ecs_hpp
         static constexpr bool instance = true;
     };
 
+    template <>
+    struct option<option_bool> {
+        static constexpr bool instance = true;
+    };
+
     //
     // options
     //
@@ -1583,6 +1604,19 @@ namespace ecs_hpp
         std::tuple<Ts...> opts_;
     };
 
+    class option_bool final {
+    public:
+        option_bool(bool b)
+        : bool_(b) {}
+
+        bool operator()(const const_entity& e) const {
+            (void)e;
+            return bool_;
+        }
+    private:
+        bool bool_{false};
+    };
+
     //
     // operators
     //
@@ -1606,6 +1640,57 @@ namespace ecs_hpp
     option_disj<std::decay_t<A>, std::decay_t<B>> operator||(A&& a, B&& b) {
         return {std::forward<A>(a), std::forward<B>(b)};
     }
+}
+
+// -----------------------------------------------------------------------------
+//
+// aspect
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename... Ts >
+    class aspect {
+    public:
+        static auto to_option() noexcept {
+            return (option_bool{true} && ... && exists<Ts>{});
+        }
+
+        static bool match_entity(const const_entity& e) noexcept {
+            return (... && e.exists_component<Ts>());
+        }
+
+        template < typename F, typename... Opts >
+        static void for_each_entity(registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                [&f](const auto& e, const auto&...){
+                    f(e);
+                }, std::forward<Opts>(opts)...);
+        }
+
+        template < typename F, typename... Opts >
+        static void for_each_entity(const registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                [&f](const auto& e, const auto&...){
+                    f(e);
+                }, std::forward<Opts>(opts)...);
+        }
+
+        template < typename F, typename... Opts >
+        static void for_joined_components(registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                std::forward<F>(f),
+                std::forward<Opts>(opts)...);
+        }
+
+        template < typename F, typename... Opts >
+        static void for_joined_components(const registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                std::forward<F>(f),
+                std::forward<Opts>(opts)...);
+        }
+    };
 }
 
 // -----------------------------------------------------------------------------
@@ -2681,6 +2766,24 @@ namespace ecs_hpp
             std::make_unique<detail::component_storage<T>>(*this));
         return *static_cast<detail::component_storage<T>*>(
             storages_.get(family).get());
+    }
+
+    template < typename F, typename... Opts >
+    void registry::for_joined_components_impl_(
+        std::index_sequence<>,
+        F&& f,
+        Opts&&... opts)
+    {
+        for_each_entity(std::forward<F>(f), std::forward<Opts>(opts)...);
+    }
+
+    template < typename F, typename... Opts >
+    void registry::for_joined_components_impl_(
+        std::index_sequence<>,
+        F&& f,
+        Opts&&... opts) const
+    {
+        for_each_entity(std::forward<F>(f), std::forward<Opts>(opts)...);
     }
 
     template < typename T
