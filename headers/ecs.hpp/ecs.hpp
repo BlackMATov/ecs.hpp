@@ -39,7 +39,9 @@ namespace ecs_hpp
 
     class prototype;
 
+    template < typename Event >
     class system;
+    class feature;
     class registry;
 
     template < typename T >
@@ -61,14 +63,12 @@ namespace ecs_hpp
     class aspect;
 
     class entity_filler;
-    class registry_filler;
 }
 
 namespace ecs_hpp
 {
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
-    using priority_t = std::int32_t;
 
     constexpr std::size_t entity_id_index_bits = 22u;
     constexpr std::size_t entity_id_version_bits = 10u;
@@ -1244,10 +1244,55 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
-    class system {
+    namespace detail
+    {
+        class system_base {
+        public:
+            virtual ~system_base() = default;
+        };
+    }
+
+    template < typename Event >
+    class system : public detail::system_base {
     public:
-        virtual ~system() = default;
-        virtual void process(registry& owner) = 0;
+        using event_type = Event;
+        virtual void process(registry& owner, const Event& event) = 0;
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
+// feature
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    class feature final {
+    public:
+        feature() = default;
+
+        feature(const feature&) = delete;
+        feature& operator=(const feature&) = delete;
+
+        feature(feature&&) noexcept = default;
+        feature& operator=(feature&&) noexcept = default;
+
+        feature& enable() noexcept;
+        feature& disable() noexcept;
+
+        bool is_enabled() const noexcept;
+        bool is_disabled() const noexcept;
+
+        template < typename T, typename... Args >
+        feature& add_system(Args&&... args);
+        template < typename Event >
+        feature& process_event(registry& owner, const Event& event);
+    private:
+        bool disabled_{false};
+        mutable detail::incremental_locker base_systems_locker_;
+        using system_uptr = std::unique_ptr<detail::system_base>;
+        std::vector<std::pair<family_id, system_uptr>> base_systems_;
     };
 }
 
@@ -1383,13 +1428,23 @@ namespace ecs_hpp
         template < typename... Ts, typename F, typename... Opts >
         void for_joined_components(F&& f, Opts&&... opts) const;
 
-        template < typename T, typename... Args >
-        void add_system(priority_t priority, Args&&... args);
+        template < typename Tag, typename... Args >
+        feature& assign_feature(Args&&... args);
 
-        void process_all_systems();
-        void process_systems_above(priority_t min);
-        void process_systems_below(priority_t max);
-        void process_systems_in_range(priority_t min, priority_t max);
+        template < typename Tag, typename... Args >
+        feature& ensure_feature(Args&&... args);
+
+        template < typename Tag >
+        bool has_feature() const noexcept;
+
+        template < typename Tag >
+        feature& get_feature();
+
+        template < typename Tag >
+        const feature& get_feature() const;
+
+        template < typename Event >
+        registry& process_event(const Event& event);
 
         struct memory_usage_info {
             std::size_t entities{0u};
@@ -1481,14 +1536,15 @@ namespace ecs_hpp
     private:
         entity_id last_entity_id_{0u};
         std::vector<entity_id> free_entity_ids_;
+
         mutable detail::incremental_locker entity_ids_locker_;
         detail::sparse_set<entity_id, detail::entity_id_indexer> entity_ids_;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
         detail::sparse_map<family_id, storage_uptr> storages_;
 
-        using system_uptr = std::unique_ptr<system>;
-        std::vector<std::pair<priority_t, system_uptr>> systems_;
+        mutable detail::incremental_locker features_locker_;
+        detail::sparse_map<family_id, feature> features_;
     };
 }
 
@@ -1728,22 +1784,6 @@ namespace ecs_hpp
         }
     private:
         entity& entity_;
-    };
-
-    class registry_filler final {
-    public:
-        registry_filler(registry& registry) noexcept
-        : registry_(registry) {}
-
-        template < typename T, typename... Args >
-        registry_filler& system(priority_t priority, Args&&... args) {
-            registry_.add_system<T>(
-                priority,
-                std::forward<Args>(args)...);
-            return *this;
-        }
-    private:
-        registry& registry_;
     };
 }
 
@@ -2312,6 +2352,55 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// feature impl
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    inline feature& feature::enable() noexcept {
+        disabled_ = false;
+        return *this;
+    }
+
+    inline feature& feature::disable() noexcept {
+        disabled_ = true;
+        return *this;
+    }
+
+    inline bool feature::is_enabled() const noexcept {
+        return !disabled_;
+    }
+
+    inline bool feature::is_disabled() const noexcept {
+        return disabled_;
+    }
+
+    template < typename T, typename... Args >
+    feature& feature::add_system(Args&&... args) {
+        assert(!base_systems_locker_.is_locked());
+        base_systems_.push_back({
+            detail::type_family<typename T::event_type>::id(),
+            std::make_unique<T>(std::forward<Args>(args)...)});
+        return *this;
+    }
+
+    template < typename Event >
+    feature& feature::process_event(registry& owner, const Event& event) {
+        const auto event_id = detail::type_family<Event>::id();
+        detail::incremental_lock_guard lock(base_systems_locker_);
+        for ( const auto& [system_event_id, base_system] : base_systems_ ) {
+            if ( event_id == system_event_id ) {
+                auto system_ptr = static_cast<system<Event>*>(base_system.get());
+                system_ptr->process(owner, event);
+            }
+        }
+        return *this;
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // registry impl
 //
 // -----------------------------------------------------------------------------
@@ -2691,45 +2780,59 @@ namespace ecs_hpp
             std::forward<Opts>(opts)...);
     }
 
-    template < typename T, typename... Args >
-    void registry::add_system(priority_t priority, Args&&... args) {
-        auto iter = std::upper_bound(
-            systems_.begin(), systems_.end(), priority,
-            [](priority_t pr, const auto& r){
-                return pr < r.first;
-            });
-        systems_.insert(
-            iter,
-            std::make_pair(priority, std::make_unique<T>(std::forward<Args>(args)...)));
-    }
-
-    inline void registry::process_all_systems() {
-        process_systems_in_range(
-            std::numeric_limits<priority_t>::min(),
-            std::numeric_limits<priority_t>::max());
-    }
-
-    inline void registry::process_systems_above(priority_t min) {
-        process_systems_in_range(
-            min,
-            std::numeric_limits<priority_t>::max());
-    }
-
-    inline void registry::process_systems_below(priority_t max) {
-        process_systems_in_range(
-            std::numeric_limits<priority_t>::min(),
-            max);
-    }
-
-    inline void registry::process_systems_in_range(priority_t min, priority_t max) {
-        const auto first = std::lower_bound(
-            systems_.begin(), systems_.end(), min,
-            [](const auto& p, priority_t pr) noexcept {
-                return p.first < pr;
-            });
-        for ( auto iter = first; iter != systems_.end() && iter->first <= max; ++iter ) {
-            iter->second->process(*this);
+    template < typename Tag, typename... Args >
+    feature& registry::assign_feature(Args&&... args) {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( feature* f = features_.find(feature_id) ) {
+            return *f = feature{std::forward<Args>(args)...};
         }
+        assert(!features_locker_.is_locked());
+        return *features_.insert(feature_id, feature()).first;
+    }
+
+    template < typename Tag, typename... Args >
+    feature& registry::ensure_feature(Args&&... args) {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( feature* f = features_.find(feature_id) ) {
+            return *f;
+        }
+        assert(!features_locker_.is_locked());
+        return *features_.insert(feature_id, feature{std::forward<Args>(args)...}).first;
+    }
+
+    template < typename Tag >
+    bool registry::has_feature() const noexcept {
+        const auto feature_id = detail::type_family<Tag>::id();
+        return features_.has(feature_id);
+    }
+
+    template < typename Tag >
+    feature& registry::get_feature() {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( feature* f = features_.find(feature_id) ) {
+            return *f;
+        }
+        throw std::logic_error("ecs_hpp::registry (feature not found)");
+    }
+
+    template < typename Tag >
+    const feature& registry::get_feature() const {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( const feature* f = features_.find(feature_id) ) {
+            return *f;
+        }
+        throw std::logic_error("ecs_hpp::registry (feature not found)");
+    }
+
+    template < typename Event >
+    registry& registry::process_event(const Event& event) {
+        detail::incremental_lock_guard lock(features_locker_);
+        for ( const auto family : features_ ) {
+            if ( feature& f = features_.get(family); f.is_enabled() ) {
+                f.process_event(*this, event);
+            }
+        }
+        return *this;
     }
 
     inline registry::memory_usage_info registry::memory_usage() const noexcept {
