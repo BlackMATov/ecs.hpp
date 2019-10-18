@@ -68,6 +68,7 @@ namespace ecs_hpp
     class aspect;
 
     class entity_filler;
+    class registry_filler;
 }
 
 namespace ecs_hpp
@@ -1813,6 +1814,20 @@ namespace ecs_hpp
     private:
         entity& entity_;
     };
+
+    class registry_filler final {
+    public:
+        registry_filler(registry& registry) noexcept
+        : registry_(registry) {}
+
+        template < typename Tag, typename... Args >
+        registry_filler& feature(Args&&... args) {
+            registry_.assign_feature<Tag>(std::forward<Args>(args)...);
+            return *this;
+        }
+    private:
+        registry& registry_;
+    };
 }
 
 // -----------------------------------------------------------------------------
@@ -2836,7 +2851,7 @@ namespace ecs_hpp
             return *f = feature{std::forward<Args>(args)...};
         }
         assert(!features_locker_.is_locked());
-        return *features_.insert(feature_id, feature()).first;
+        return *features_.insert(feature_id, feature{std::forward<Args>(args)...}).first;
     }
 
     template < typename Tag, typename... Args >
