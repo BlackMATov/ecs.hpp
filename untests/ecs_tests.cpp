@@ -60,14 +60,19 @@ namespace
 TEST_CASE("detail") {
     SECTION("get_type_id") {
         using namespace ecs::detail;
-        REQUIRE(type_family<position_c>::id() == 1u);
-        REQUIRE(type_family<position_c>::id() == 1u);
 
-        REQUIRE(type_family<velocity_c>::id() == 2u);
-        REQUIRE(type_family<velocity_c>::id() == 2u);
+        const auto p_id = type_family<position_c>::id();
+        REQUIRE(p_id == type_family<position_c>::id());
 
-        REQUIRE(type_family<position_c>::id() == 1u);
-        REQUIRE(type_family<velocity_c>::id() == 2u);
+        const auto v_id = type_family<velocity_c>::id();
+        REQUIRE(v_id == type_family<velocity_c>::id());
+
+        REQUIRE(type_family<position_c>::id() == type_family<position_c>::id());
+        REQUIRE(type_family<velocity_c>::id() == type_family<velocity_c>::id());
+        REQUIRE_FALSE(type_family<position_c>::id() == type_family<velocity_c>::id());
+
+        REQUIRE(p_id == type_family<position_c>::id());
+        REQUIRE(v_id == type_family<velocity_c>::id());
     }
     SECTION("tuple_tail") {
         using namespace ecs::detail;
@@ -1185,6 +1190,102 @@ TEST_CASE("registry") {
             });
         }
     }
+    SECTION("aspects") {
+        {
+            using empty_aspect = ecs::aspect<>;
+
+            ecs::registry w;
+
+            ecs::entity e1 = w.create_entity();
+            REQUIRE(empty_aspect::match_entity(e1));
+
+            ecs::entity e2 = w.create_entity();
+            e2.assign_component<movable_c>();
+            e2.assign_component<position_c>(1,2);
+            REQUIRE(empty_aspect::match_entity(e2));
+
+            ecs::entity e3 = w.create_entity();
+            e3.assign_component<movable_c>();
+            e3.assign_component<position_c>(1,2);
+            e3.assign_component<velocity_c>(3,4);
+            REQUIRE(empty_aspect::match_entity(e3));
+
+            {
+                ecs::entity_id acc{};
+                empty_aspect::for_each_entity(w, [&acc](ecs::entity e){
+                    acc += e.id();
+                }, ecs::exists<movable_c>{});
+                REQUIRE(acc == e2.id() + e3.id());
+            }
+
+            {
+                ecs::entity_id acc{};
+                empty_aspect::for_joined_components(w, [&acc](ecs::entity e){
+                    acc += e.id();
+                }, ecs::exists<movable_c>{});
+                REQUIRE(acc == e2.id() + e3.id());
+            }
+
+            {
+                ecs::entity_id acc{};
+                w.for_each_entity([&acc](ecs::entity e){
+                    acc += e.id();
+                }, empty_aspect::to_option());
+                REQUIRE(acc == e1.id() + e2.id() + e3.id());
+            }
+        }
+        {
+            using movable = ecs::aspect<
+                position_c,
+                velocity_c>;
+
+            ecs::registry w;
+
+            ecs::entity e = w.create_entity();
+            REQUIRE_FALSE(movable::match_entity(e));
+
+            e.assign_component<position_c>(1,2);
+            REQUIRE_FALSE(movable::match_entity(e));
+
+            e.assign_component<velocity_c>(3,4);
+            REQUIRE(movable::match_entity(e));
+
+            ecs::entity e2 = w.create_entity();
+            e2.assign_component<position_c>(1,2);
+
+            movable::for_joined_components(w,
+            [](ecs::entity_id, position_c& p, const velocity_c& v){
+                p.x += v.x;
+                p.y += v.y;
+            });
+
+            movable::for_joined_components(std::as_const(w),
+            [](ecs::entity_id, const position_c& p, const velocity_c& v){
+                const_cast<position_c&>(p).x += v.x;
+                const_cast<position_c&>(p).y += v.y;
+            });
+
+            w.for_each_entity([](ecs::entity e){
+                auto& p = e.get_component<position_c>();
+                const auto& v = e.get_component<velocity_c>();
+                p.x += v.x;
+                p.y += v.y;
+            }, movable::to_option());
+
+            std::as_const(w).for_each_entity([](const ecs::const_entity& e){
+                const auto& p = e.get_component<position_c>();
+                const auto& v = e.get_component<velocity_c>();
+                const_cast<position_c&>(p).x += v.x;
+                const_cast<position_c&>(p).y += v.y;
+            }, movable::to_option());
+
+            REQUIRE(e.get_component<position_c>().x == 1 + 3*4);
+            REQUIRE(e.get_component<position_c>().y == 2 + 4*4);
+
+            REQUIRE(e2.get_component<position_c>().x == 1);
+            REQUIRE(e2.get_component<position_c>().y == 2);
+        }
+    }
     SECTION("options") {
         {
             ecs::registry w;
@@ -1367,88 +1468,140 @@ TEST_CASE("registry") {
         }
     }
     SECTION("systems") {
-        {
-            class movement_system : public ecs::system {
-            public:
-                void process(ecs::registry& owner) override {
-                    owner.for_joined_components<position_c, velocity_c>([](
-                        ecs::entity, position_c& p, const velocity_c& v)
-                    {
-                        p.x += v.x;
-                        p.y += v.y;
-                    });
-                }
-            };
+        struct update_evt {
+            int dt{};
+        };
 
-            ecs::registry w;
-            w.add_system<movement_system>(0);
+        class gravity_system : public ecs::system<update_evt> {
+        public:
+            gravity_system(int g)
+            : g_(g) {}
 
-            auto e1 = w.create_entity();
-            auto e2 = w.create_entity();
+            void process(ecs::registry& owner, const update_evt& evt) override {
+                owner.for_each_component<
+                    velocity_c
+                >([this, &evt](ecs::entity, velocity_c& v) {
+                    v.x += g_ * evt.dt;
+                    v.y += g_ * evt.dt;
+                }, !ecs::exists<disabled_c>{});
+            }
+        private:
+            int g_{};
+        };
 
-            e1.assign_component<position_c>(1, 2);
-            e1.assign_component<velocity_c>(3, 4);
-            e2.assign_component<position_c>(5, 6);
-            e2.assign_component<velocity_c>(7, 8);
+        class movement_system : public ecs::system<update_evt> {
+        public:
+            void process(ecs::registry& owner, const update_evt& evt) override {
+                owner.for_joined_components<position_c, velocity_c>([&evt](
+                    ecs::entity, position_c& p, const velocity_c& v)
+                {
+                    p.x += v.x * evt.dt;
+                    p.y += v.y * evt.dt;
+                }, !ecs::exists<disabled_c>{});
+            }
+        };
 
-            w.process_all_systems();
+        ecs::registry w;
+        REQUIRE_FALSE(w.has_feature<struct physics>());
 
-            REQUIRE(e1.get_component<position_c>().x == 1 + 3);
-            REQUIRE(e1.get_component<position_c>().y == 2 + 4);
+        w.assign_feature<struct physics>()
+            .add_system<gravity_system>(9);
 
-            REQUIRE(e2.get_component<position_c>().x == 5 + 7);
-            REQUIRE(e2.get_component<position_c>().y == 6 + 8);
-        }
-        {
-            class system_n : public ecs::system {
-            public:
-                system_n(int& i, int n) : i_(i), n_(n) {}
-                void process(ecs::registry&) override {
-                    i_ += n_;
-                }
-            private:
-                int& i_;
-                int n_;
-            };
+        REQUIRE(w.has_feature<struct physics>());
 
-            int i = 0;
-            ecs::registry w;
-            w.add_system<system_n>(20, std::ref(i), 2);
-            w.add_system<system_n>(10, std::ref(i), 1);
-            REQUIRE(i == 0);
-            w.process_all_systems();
-            REQUIRE(i == 3);
-            w.process_systems_below(10);
-            REQUIRE(i == 4);
-            w.process_systems_above(20);
-            REQUIRE(i == 6);
-            w.process_systems_below(20);
-            REQUIRE(i == 9);
-            w.process_systems_above(10);
-            REQUIRE(i == 12);
+        w.ensure_feature<struct physics>()
+            .add_system<movement_system>();
 
-            w.process_systems_below(9);
-            w.process_systems_above(21);
-            REQUIRE(i == 12);
+        REQUIRE(w.has_feature<struct physics>());
 
-            w.process_systems_in_range(0, 9);
-            w.process_systems_in_range(11, 19);
-            w.process_systems_in_range(21, 30);
-            REQUIRE(i == 12);
+        ecs::entity e = w.create_entity();
+        e.assign_component<position_c>(1,2);
+        e.assign_component<velocity_c>(3,4);
 
-            w.process_systems_in_range(0, 10);
-            REQUIRE(i == 13);
-            w.process_systems_in_range(10, 19);
-            REQUIRE(i == 14);
-            w.process_systems_in_range(10, 20);
-            REQUIRE(i == 17);
-            w.process_systems_in_range(20, 30);
-            REQUIRE(i == 19);
-            w.process_systems_in_range(10, 20);
-            REQUIRE(i == 22);
-            w.process_systems_in_range(0, 30);
-            REQUIRE(i == 25);
-        }
+        w.get_feature<struct physics>().disable();
+        w.process_event(update_evt{2});
+
+        REQUIRE(e.get_component<position_c>().x == 1);
+        REQUIRE(e.get_component<position_c>().y == 2);
+
+        w.get_feature<struct physics>().enable();
+        w.process_event(update_evt{2});
+
+        REQUIRE(e.get_component<position_c>().x == 1 + (3 + 9 * 2) * 2);
+        REQUIRE(e.get_component<position_c>().y == 2 + (4 + 9 * 2) * 2);
+    }
+    SECTION("recursive_systems") {
+        struct update_evt {
+            int dt{};
+        };
+
+        struct physics_evt {
+            update_evt parent{};
+        };
+
+        struct clear_velocity_evt {
+        };
+
+        class gravity_system : public ecs::system<ecs::before<physics_evt>> {
+        public:
+            gravity_system(int g)
+            : g_(g) {}
+
+            void process(ecs::registry& owner, const ecs::before<physics_evt>& before) override {
+                owner.for_each_component<velocity_c>(
+                [this, &evt = before.event](ecs::entity, velocity_c& v) {
+                    v.x += g_ * evt.parent.dt;
+                    v.y += g_ * evt.parent.dt;
+                }, !ecs::exists<disabled_c>{});
+            }
+        private:
+            int g_{};
+        };
+
+        class movement_system : public ecs::system<physics_evt> {
+        public:
+            void process(ecs::registry& owner, const physics_evt& evt) override {
+                owner.for_joined_components<position_c, velocity_c>(
+                [&evt](ecs::entity, position_c& p, const velocity_c& v) {
+                    p.x += v.x * evt.parent.dt;
+                    p.y += v.y * evt.parent.dt;
+                }, !ecs::exists<disabled_c>{});
+            }
+        };
+
+        class physics_system : public ecs::system<update_evt, clear_velocity_evt> {
+        public:
+            void process(ecs::registry& owner, const update_evt& evt) override {
+                owner.process_event(physics_evt{evt});
+            }
+
+            void process(ecs::registry& owner, const clear_velocity_evt& evt) override {
+                (void)evt;
+                owner.remove_all_components<velocity_c>();
+            }
+        };
+
+        ecs::registry w;
+
+        w.assign_feature<struct physics>()
+            .add_system<gravity_system>(9)
+            .add_system<movement_system>()
+            .add_system<physics_system>();
+
+        ecs::entity e = w.create_entity();
+        e.assign_component<position_c>(1,2);
+        e.assign_component<velocity_c>(3,4);
+
+        w.process_event(update_evt{2});
+
+        REQUIRE(e.get_component<position_c>().x == 1 + (3 + 9 * 2) * 2);
+        REQUIRE(e.get_component<position_c>().y == 2 + (4 + 9 * 2) * 2);
+
+        REQUIRE(w.component_count<velocity_c>() == 1);
+
+        w.process_event(clear_velocity_evt{});
+
+        REQUIRE(w.component_count<velocity_c>() == 0);
     }
     SECTION("fillers") {
         struct component_n {
@@ -1456,10 +1609,12 @@ TEST_CASE("registry") {
             component_n(int ni) : i(ni) {}
         };
 
-        class system_n : public ecs::system {
+        struct update_evt {};
+
+        class system_n : public ecs::system<update_evt> {
         public:
             system_n(int n) : n_(n) {}
-            void process(ecs::registry& owner) override {
+            void process(ecs::registry& owner, const update_evt&) override {
                 owner.for_each_component<component_n>(
                     [this](const ecs::const_entity&, component_n& c) noexcept {
                         c.i += n_;
@@ -1470,9 +1625,9 @@ TEST_CASE("registry") {
         };
         {
             ecs::registry w;
-            ecs::registry_filler(w)
-                .system<system_n>(0, 1)
-                .system<system_n>(0, 2);
+            w.assign_feature<struct physics>()
+                .add_system<system_n>(1)
+                .add_system<system_n>(2);
 
             ecs::entity e1 = w.create_entity();
             ecs::entity_filler(e1)
@@ -1483,7 +1638,7 @@ TEST_CASE("registry") {
             ecs::entity_filler(e2)
                 .component<component_n>(2);
 
-            w.process_all_systems();
+            w.process_event(update_evt{});
 
             REQUIRE(e1.get_component<component_n>().i == 4);
             REQUIRE(e2.get_component<component_n>().i == 5);
@@ -1585,70 +1740,4 @@ TEST_CASE("registry") {
         ](const ecs::const_entity&, movable_c&, position_c&){
         });
     }
-}
-
-TEST_CASE("example") {
-    struct movable {};
-    struct disabled {};
-
-    struct position {
-        float x{};
-        float y{};
-    };
-
-    struct velocity {
-        float dx{};
-        float dy{};
-    };
-
-    class movement_system : public ecs::system {
-    public:
-        void process(ecs::registry& owner) override {
-            owner.for_joined_components<
-                position,
-                velocity
-            >([](ecs::entity, position& p, const velocity& v) {
-                p.x += v.dx;
-                p.y += v.dy;
-            }, ecs::exists<movable>{} && !ecs::exists<disabled>{});
-        }
-    };
-
-    class gravity_system : public ecs::system {
-    public:
-        gravity_system(float gravity)
-        : gravity_(gravity) {}
-
-        void process(ecs::registry& owner) override {
-            owner.for_each_component<
-                velocity
-            >([this](ecs::entity, velocity& v) {
-                v.dx += gravity_;
-                v.dy += gravity_;
-            }, !ecs::exists<disabled>{});
-        }
-    private:
-        float gravity_{};
-    };
-
-    ecs::registry world;
-
-    ecs::registry_filler(world)
-        .system<movement_system>(0)
-        .system<gravity_system>(1, 9.8f);
-
-    auto entity_one = world.create_entity();
-    ecs::entity_filler(entity_one)
-        .component<movable>()
-        .component<position>(4.f, 2.f)
-        .component<velocity>(10.f, 20.f);
-
-    auto entity_two = world.create_entity();
-    ecs::entity_filler(entity_two)
-        .component<movable>()
-        .component<disabled>()
-        .component<position>(4.f, 2.f)
-        .component<velocity>(10.f, 20.f);
-
-    world.process_all_systems();
 }

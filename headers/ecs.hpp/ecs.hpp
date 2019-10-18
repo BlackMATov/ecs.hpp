@@ -39,7 +39,14 @@ namespace ecs_hpp
 
     class prototype;
 
+    template < typename E >
+    class after;
+    template < typename E >
+    class before;
+
+    template < typename... Es >
     class system;
+    class feature;
     class registry;
 
     template < typename T >
@@ -55,16 +62,18 @@ namespace ecs_hpp
     class option_conj;
     template < typename... Ts >
     class option_disj;
+    class option_bool;
+
+    template < typename... Ts >
+    class aspect;
 
     class entity_filler;
-    class registry_filler;
 }
 
 namespace ecs_hpp
 {
     using family_id = std::uint16_t;
     using entity_id = std::uint32_t;
-    using priority_t = std::int32_t;
 
     constexpr std::size_t entity_id_index_bits = 22u;
     constexpr std::size_t entity_id_version_bits = 10u;
@@ -281,8 +290,20 @@ namespace ecs_hpp
             incremental_locker() = default;
             ~incremental_locker() noexcept = default;
 
-            incremental_locker(const incremental_locker&) = delete;
-            incremental_locker& operator=(const incremental_locker&) = delete;
+            incremental_locker(incremental_locker&& other) noexcept = default;
+            incremental_locker(const incremental_locker& other) noexcept = default;
+
+            incremental_locker& operator=(incremental_locker&& other) noexcept {
+                assert(!is_locked());
+                (void)other;
+                return *this;
+            }
+
+            incremental_locker& operator=(const incremental_locker& other) noexcept {
+                assert(!is_locked());
+                (void)other;
+                return *this;
+            }
 
             void lock() noexcept {
                 ++lock_count_;
@@ -1222,16 +1243,90 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// triggers
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename E >
+    class after {
+    public:
+        const E& event;
+    };
+
+    template < typename E >
+    class before {
+    public:
+        const E& event;
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
 // system
 //
 // -----------------------------------------------------------------------------
 
 namespace ecs_hpp
 {
-    class system {
+    template <>
+    class system<> {
     public:
         virtual ~system() = default;
-        virtual void process(registry& owner) = 0;
+    };
+
+    template < typename E >
+    class system<E>
+        : public virtual system<> {
+    public:
+        virtual void process(registry& owner, const E& event) = 0;
+    };
+
+    template < typename E, typename... Es>
+    class system<E, Es...>
+        : public system<E>
+        , public system<Es...> {};
+}
+
+// -----------------------------------------------------------------------------
+//
+// feature
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    class feature final {
+    public:
+        feature() = default;
+
+        feature(const feature&) = delete;
+        feature& operator=(const feature&) = delete;
+
+        feature(feature&&) noexcept = default;
+        feature& operator=(feature&&) noexcept = default;
+
+        feature& enable() & noexcept;
+        feature&& enable() && noexcept;
+
+        feature& disable() & noexcept;
+        feature&& disable() && noexcept;
+
+        bool is_enabled() const noexcept;
+        bool is_disabled() const noexcept;
+
+        template < typename T, typename... Args >
+        feature& add_system(Args&&... args) &;
+        template < typename T, typename... Args >
+        feature&& add_system(Args&&... args) &&;
+
+        template < typename Event >
+        feature& process_event(registry& owner, const Event& event);
+    private:
+        bool disabled_{false};
+        std::vector<std::unique_ptr<system<>>> systems_;
+        mutable detail::incremental_locker systems_locker_;
     };
 }
 
@@ -1291,6 +1386,9 @@ namespace ecs_hpp
 
         registry(const registry& other) = delete;
         registry& operator=(const registry& other) = delete;
+
+        registry(registry&& other) noexcept = default;
+        registry& operator=(registry&& other) noexcept = default;
 
         entity wrap_entity(const const_uentity& ent) noexcept;
         const_entity wrap_entity(const const_uentity& ent) const noexcept;
@@ -1364,13 +1462,23 @@ namespace ecs_hpp
         template < typename... Ts, typename F, typename... Opts >
         void for_joined_components(F&& f, Opts&&... opts) const;
 
-        template < typename T, typename... Args >
-        void add_system(priority_t priority, Args&&... args);
+        template < typename Tag, typename... Args >
+        feature& assign_feature(Args&&... args);
 
-        void process_all_systems();
-        void process_systems_above(priority_t min);
-        void process_systems_below(priority_t max);
-        void process_systems_in_range(priority_t min, priority_t max);
+        template < typename Tag, typename... Args >
+        feature& ensure_feature(Args&&... args);
+
+        template < typename Tag >
+        bool has_feature() const noexcept;
+
+        template < typename Tag >
+        feature& get_feature();
+
+        template < typename Tag >
+        const feature& get_feature() const;
+
+        template < typename Event >
+        registry& process_event(const Event& event);
 
         struct memory_usage_info {
             std::size_t entities{0u};
@@ -1389,6 +1497,18 @@ namespace ecs_hpp
 
         template < typename T >
         detail::component_storage<T>& get_or_create_storage_();
+
+        template < typename F, typename... Opts >
+        void for_joined_components_impl_(
+            std::index_sequence<>,
+            F&& f,
+            Opts&&... opts);
+
+        template < typename F, typename... Opts >
+        void for_joined_components_impl_(
+            std::index_sequence<>,
+            F&& f,
+            Opts&&... opts) const;
 
         template < typename T
                  , typename... Ts
@@ -1450,14 +1570,15 @@ namespace ecs_hpp
     private:
         entity_id last_entity_id_{0u};
         std::vector<entity_id> free_entity_ids_;
+
         mutable detail::incremental_locker entity_ids_locker_;
         detail::sparse_set<entity_id, detail::entity_id_indexer> entity_ids_;
 
         using storage_uptr = std::unique_ptr<detail::component_storage_base>;
         detail::sparse_map<family_id, storage_uptr> storages_;
 
-        using system_uptr = std::unique_ptr<system>;
-        std::vector<std::pair<priority_t, system_uptr>> systems_;
+        mutable detail::incremental_locker features_locker_;
+        detail::sparse_map<family_id, feature> features_;
     };
 }
 
@@ -1469,44 +1590,43 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
-    //
-    // traits
-    //
+    namespace detail
+    {
+        template < typename T >
+        struct is_option
+        : std::false_type {};
 
-    template < typename T >
-    struct option {
-        static constexpr bool instance = false;
-    };
+        template < typename T >
+        struct is_option<exists<T>>
+        : std::true_type {};
 
-    template < typename T >
-    struct option<exists<T>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<exists_any<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<exists_any<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<exists_all<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<exists_all<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template < typename T >
+        struct is_option<option_neg<T>>
+        : std::true_type {};
 
-    template < typename T >
-    struct option<option_neg<T>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<option_conj<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<option_conj<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<option_disj<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<option_disj<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template <>
+        struct is_option<option_bool>
+        : std::true_type {};
+
+        template < typename T >
+        inline constexpr bool is_option_v = is_option<T>::value;
+    }
 
     //
     // options
@@ -1583,29 +1703,93 @@ namespace ecs_hpp
         std::tuple<Ts...> opts_;
     };
 
+    class option_bool final {
+    public:
+        option_bool(bool b)
+        : bool_(b) {}
+
+        bool operator()(const const_entity& e) const {
+            (void)e;
+            return bool_;
+        }
+    private:
+        bool bool_{false};
+    };
+
     //
     // operators
     //
 
     template < typename A
-             , typename = std::enable_if_t<option<A>::instance>>
+             , typename = std::enable_if_t<detail::is_option_v<A>> >
     option_neg<std::decay_t<A>> operator!(A&& a) {
         return {std::forward<A>(a)};
     }
 
     template < typename A, typename B
-             , typename = std::enable_if_t<option<A>::instance>
-             , typename = std::enable_if_t<option<B>::instance> >
+             , typename = std::enable_if_t<detail::is_option_v<A>>
+             , typename = std::enable_if_t<detail::is_option_v<B>> >
     option_conj<std::decay_t<A>, std::decay_t<B>> operator&&(A&& a, B&& b) {
         return {std::forward<A>(a), std::forward<B>(b)};
     }
 
     template < typename A, typename B
-             , typename = std::enable_if_t<option<A>::instance>
-             , typename = std::enable_if_t<option<B>::instance> >
+             , typename = std::enable_if_t<detail::is_option_v<A>>
+             , typename = std::enable_if_t<detail::is_option_v<B>> >
     option_disj<std::decay_t<A>, std::decay_t<B>> operator||(A&& a, B&& b) {
         return {std::forward<A>(a), std::forward<B>(b)};
     }
+}
+
+// -----------------------------------------------------------------------------
+//
+// aspect
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename... Ts >
+    class aspect {
+    public:
+        static auto to_option() noexcept {
+            return (option_bool{true} && ... && exists<Ts>{});
+        }
+
+        static bool match_entity(const const_entity& e) noexcept {
+            return (... && e.exists_component<Ts>());
+        }
+
+        template < typename F, typename... Opts >
+        static void for_each_entity(registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                [&f](const auto& e, const auto&...){
+                    f(e);
+                }, std::forward<Opts>(opts)...);
+        }
+
+        template < typename F, typename... Opts >
+        static void for_each_entity(const registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                [&f](const auto& e, const auto&...){
+                    f(e);
+                }, std::forward<Opts>(opts)...);
+        }
+
+        template < typename F, typename... Opts >
+        static void for_joined_components(registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                std::forward<F>(f),
+                std::forward<Opts>(opts)...);
+        }
+
+        template < typename F, typename... Opts >
+        static void for_joined_components(const registry& owner, F&& f, Opts&&... opts) {
+            owner.for_joined_components<Ts...>(
+                std::forward<F>(f),
+                std::forward<Opts>(opts)...);
+        }
+    };
 }
 
 // -----------------------------------------------------------------------------
@@ -1628,22 +1812,6 @@ namespace ecs_hpp
         }
     private:
         entity& entity_;
-    };
-
-    class registry_filler final {
-    public:
-        registry_filler(registry& registry) noexcept
-        : registry_(registry) {}
-
-        template < typename T, typename... Args >
-        registry_filler& system(priority_t priority, Args&&... args) {
-            registry_.add_system<T>(
-                priority,
-                std::forward<Args>(args)...);
-            return *this;
-        }
-    private:
-        registry& registry_;
     };
 }
 
@@ -2212,6 +2380,76 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// feature impl
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    inline feature& feature::enable() & noexcept {
+        disabled_ = false;
+        return *this;
+    }
+
+    inline feature&& feature::enable() && noexcept {
+        enable();
+        return std::move(*this);
+    }
+
+    inline feature& feature::disable() & noexcept {
+        disabled_ = true;
+        return *this;
+    }
+
+    inline feature&& feature::disable() && noexcept {
+        disable();
+        return std::move(*this);
+    }
+
+    inline bool feature::is_enabled() const noexcept {
+        return !disabled_;
+    }
+
+    inline bool feature::is_disabled() const noexcept {
+        return disabled_;
+    }
+
+    template < typename T, typename... Args >
+    feature& feature::add_system(Args&&... args) & {
+        assert(!systems_locker_.is_locked());
+        systems_.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+        return *this;
+    }
+
+    template < typename T, typename... Args >
+    feature&& feature::add_system(Args&&... args) && {
+        add_system<T>(std::forward<Args>(args)...);
+        return std::move(*this);
+    }
+
+    template < typename Event >
+    feature& feature::process_event(registry& owner, const Event& event) {
+        detail::incremental_lock_guard lock(systems_locker_);
+
+        const auto fire_event = [this, &owner](const auto& event){
+            for ( const auto& base_system : systems_ ) {
+                using system_type = system<std::decay_t<decltype(event)>>;
+                if ( auto event_system = dynamic_cast<system_type*>(base_system.get()) ) {
+                    event_system->process(owner, event);
+                }
+            }
+        };
+
+        fire_event(before<Event>{event});
+        fire_event(event);
+        fire_event(after<Event>{event});
+
+        return *this;
+    }
+}
+
+// -----------------------------------------------------------------------------
+//
 // registry impl
 //
 // -----------------------------------------------------------------------------
@@ -2591,45 +2829,59 @@ namespace ecs_hpp
             std::forward<Opts>(opts)...);
     }
 
-    template < typename T, typename... Args >
-    void registry::add_system(priority_t priority, Args&&... args) {
-        auto iter = std::upper_bound(
-            systems_.begin(), systems_.end(), priority,
-            [](priority_t pr, const auto& r){
-                return pr < r.first;
-            });
-        systems_.insert(
-            iter,
-            std::make_pair(priority, std::make_unique<T>(std::forward<Args>(args)...)));
-    }
-
-    inline void registry::process_all_systems() {
-        process_systems_in_range(
-            std::numeric_limits<priority_t>::min(),
-            std::numeric_limits<priority_t>::max());
-    }
-
-    inline void registry::process_systems_above(priority_t min) {
-        process_systems_in_range(
-            min,
-            std::numeric_limits<priority_t>::max());
-    }
-
-    inline void registry::process_systems_below(priority_t max) {
-        process_systems_in_range(
-            std::numeric_limits<priority_t>::min(),
-            max);
-    }
-
-    inline void registry::process_systems_in_range(priority_t min, priority_t max) {
-        const auto first = std::lower_bound(
-            systems_.begin(), systems_.end(), min,
-            [](const auto& p, priority_t pr) noexcept {
-                return p.first < pr;
-            });
-        for ( auto iter = first; iter != systems_.end() && iter->first <= max; ++iter ) {
-            iter->second->process(*this);
+    template < typename Tag, typename... Args >
+    feature& registry::assign_feature(Args&&... args) {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( feature* f = features_.find(feature_id) ) {
+            return *f = feature{std::forward<Args>(args)...};
         }
+        assert(!features_locker_.is_locked());
+        return *features_.insert(feature_id, feature()).first;
+    }
+
+    template < typename Tag, typename... Args >
+    feature& registry::ensure_feature(Args&&... args) {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( feature* f = features_.find(feature_id) ) {
+            return *f;
+        }
+        assert(!features_locker_.is_locked());
+        return *features_.insert(feature_id, feature{std::forward<Args>(args)...}).first;
+    }
+
+    template < typename Tag >
+    bool registry::has_feature() const noexcept {
+        const auto feature_id = detail::type_family<Tag>::id();
+        return features_.has(feature_id);
+    }
+
+    template < typename Tag >
+    feature& registry::get_feature() {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( feature* f = features_.find(feature_id) ) {
+            return *f;
+        }
+        throw std::logic_error("ecs_hpp::registry (feature not found)");
+    }
+
+    template < typename Tag >
+    const feature& registry::get_feature() const {
+        const auto feature_id = detail::type_family<Tag>::id();
+        if ( const feature* f = features_.find(feature_id) ) {
+            return *f;
+        }
+        throw std::logic_error("ecs_hpp::registry (feature not found)");
+    }
+
+    template < typename Event >
+    registry& registry::process_event(const Event& event) {
+        detail::incremental_lock_guard lock(features_locker_);
+        for ( const auto family : features_ ) {
+            if ( feature& f = features_.get(family); f.is_enabled() ) {
+                f.process_event(*this, event);
+            }
+        }
+        return *this;
     }
 
     inline registry::memory_usage_info registry::memory_usage() const noexcept {
@@ -2681,6 +2933,24 @@ namespace ecs_hpp
             std::make_unique<detail::component_storage<T>>(*this));
         return *static_cast<detail::component_storage<T>*>(
             storages_.get(family).get());
+    }
+
+    template < typename F, typename... Opts >
+    void registry::for_joined_components_impl_(
+        std::index_sequence<>,
+        F&& f,
+        Opts&&... opts)
+    {
+        for_each_entity(std::forward<F>(f), std::forward<Opts>(opts)...);
+    }
+
+    template < typename F, typename... Opts >
+    void registry::for_joined_components_impl_(
+        std::index_sequence<>,
+        F&& f,
+        Opts&&... opts) const
+    {
+        for_each_entity(std::forward<F>(f), std::forward<Opts>(opts)...);
     }
 
     template < typename T
