@@ -1536,20 +1536,22 @@ TEST_CASE("registry") {
         };
 
         struct physics_evt {
-            update_evt parent_evt{};
+            update_evt parent{};
         };
 
-        class gravity_system : public ecs::system<physics_evt> {
+        struct clear_velocity_evt {
+        };
+
+        class gravity_system : public ecs::system<ecs::before<physics_evt>> {
         public:
             gravity_system(int g)
             : g_(g) {}
 
-            void process(ecs::registry& owner, const physics_evt& evt) override {
-                owner.for_each_component<
-                    velocity_c
-                >([this, &evt](ecs::entity, velocity_c& v) {
-                    v.x += g_ * evt.parent_evt.dt;
-                    v.y += g_ * evt.parent_evt.dt;
+            void process(ecs::registry& owner, const ecs::before<physics_evt>& before) override {
+                owner.for_each_component<velocity_c>(
+                [this, &evt = before.event](ecs::entity, velocity_c& v) {
+                    v.x += g_ * evt.parent.dt;
+                    v.y += g_ * evt.parent.dt;
                 }, !ecs::exists<disabled_c>{});
             }
         private:
@@ -1559,19 +1561,23 @@ TEST_CASE("registry") {
         class movement_system : public ecs::system<physics_evt> {
         public:
             void process(ecs::registry& owner, const physics_evt& evt) override {
-                owner.for_joined_components<position_c, velocity_c>([&evt](
-                    ecs::entity, position_c& p, const velocity_c& v)
-                {
-                    p.x += v.x * evt.parent_evt.dt;
-                    p.y += v.y * evt.parent_evt.dt;
+                owner.for_joined_components<position_c, velocity_c>(
+                [&evt](ecs::entity, position_c& p, const velocity_c& v) {
+                    p.x += v.x * evt.parent.dt;
+                    p.y += v.y * evt.parent.dt;
                 }, !ecs::exists<disabled_c>{});
             }
         };
 
-        class physics_system : public ecs::system<update_evt> {
+        class physics_system : public ecs::system<update_evt, clear_velocity_evt> {
         public:
             void process(ecs::registry& owner, const update_evt& evt) override {
                 owner.process_event(physics_evt{evt});
+            }
+
+            void process(ecs::registry& owner, const clear_velocity_evt& evt) override {
+                (void)evt;
+                owner.remove_all_components<velocity_c>();
             }
         };
 
@@ -1590,6 +1596,12 @@ TEST_CASE("registry") {
 
         REQUIRE(e.get_component<position_c>().x == 1 + (3 + 9 * 2) * 2);
         REQUIRE(e.get_component<position_c>().y == 2 + (4 + 9 * 2) * 2);
+
+        REQUIRE(w.component_count<velocity_c>() == 1);
+
+        w.process_event(clear_velocity_evt{});
+
+        REQUIRE(w.component_count<velocity_c>() == 0);
     }
     SECTION("fillers") {
         struct component_n {

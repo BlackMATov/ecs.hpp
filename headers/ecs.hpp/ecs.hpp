@@ -39,7 +39,12 @@ namespace ecs_hpp
 
     class prototype;
 
-    template < typename Event >
+    template < typename E >
+    class after;
+    template < typename E >
+    class before;
+
+    template < typename... Es >
     class system;
     class feature;
     class registry;
@@ -1238,26 +1243,50 @@ namespace ecs_hpp
 
 // -----------------------------------------------------------------------------
 //
+// triggers
+//
+// -----------------------------------------------------------------------------
+
+namespace ecs_hpp
+{
+    template < typename E >
+    class after {
+    public:
+        const E& event;
+    };
+
+    template < typename E >
+    class before {
+    public:
+        const E& event;
+    };
+}
+
+// -----------------------------------------------------------------------------
+//
 // system
 //
 // -----------------------------------------------------------------------------
 
 namespace ecs_hpp
 {
-    namespace detail
-    {
-        class system_base {
-        public:
-            virtual ~system_base() = default;
-        };
-    }
-
-    template < typename Event >
-    class system : public detail::system_base {
+    template <>
+    class system<> {
     public:
-        using event_type = Event;
-        virtual void process(registry& owner, const Event& event) = 0;
+        virtual ~system() = default;
     };
+
+    template < typename E >
+    class system<E>
+        : public virtual system<> {
+    public:
+        virtual void process(registry& owner, const E& event) = 0;
+    };
+
+    template < typename E, typename... Es>
+    class system<E, Es...>
+        : public system<E>
+        , public system<Es...> {};
 }
 
 // -----------------------------------------------------------------------------
@@ -1278,21 +1307,26 @@ namespace ecs_hpp
         feature(feature&&) noexcept = default;
         feature& operator=(feature&&) noexcept = default;
 
-        feature& enable() noexcept;
-        feature& disable() noexcept;
+        feature& enable() & noexcept;
+        feature&& enable() && noexcept;
+
+        feature& disable() & noexcept;
+        feature&& disable() && noexcept;
 
         bool is_enabled() const noexcept;
         bool is_disabled() const noexcept;
 
         template < typename T, typename... Args >
-        feature& add_system(Args&&... args);
+        feature& add_system(Args&&... args) &;
+        template < typename T, typename... Args >
+        feature&& add_system(Args&&... args) &&;
+
         template < typename Event >
         feature& process_event(registry& owner, const Event& event);
     private:
         bool disabled_{false};
-        mutable detail::incremental_locker base_systems_locker_;
-        using system_uptr = std::unique_ptr<detail::system_base>;
-        std::vector<std::pair<family_id, system_uptr>> base_systems_;
+        std::vector<std::unique_ptr<system<>>> systems_;
+        mutable detail::incremental_locker systems_locker_;
     };
 }
 
@@ -1556,49 +1590,43 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
-    //
-    // traits
-    //
+    namespace detail
+    {
+        template < typename T >
+        struct is_option
+        : std::false_type {};
 
-    template < typename T >
-    struct option {
-        static constexpr bool instance = false;
-    };
+        template < typename T >
+        struct is_option<exists<T>>
+        : std::true_type {};
 
-    template < typename T >
-    struct option<exists<T>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<exists_any<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<exists_any<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<exists_all<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<exists_all<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template < typename T >
+        struct is_option<option_neg<T>>
+        : std::true_type {};
 
-    template < typename T >
-    struct option<option_neg<T>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<option_conj<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<option_conj<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template < typename... Ts >
+        struct is_option<option_disj<Ts...>>
+        : std::true_type {};
 
-    template < typename... Ts >
-    struct option<option_disj<Ts...>> {
-        static constexpr bool instance = true;
-    };
+        template <>
+        struct is_option<option_bool>
+        : std::true_type {};
 
-    template <>
-    struct option<option_bool> {
-        static constexpr bool instance = true;
-    };
+        template < typename T >
+        inline constexpr bool is_option_v = is_option<T>::value;
+    }
 
     //
     // options
@@ -1693,21 +1721,21 @@ namespace ecs_hpp
     //
 
     template < typename A
-             , typename = std::enable_if_t<option<A>::instance>>
+             , typename = std::enable_if_t<detail::is_option_v<A>> >
     option_neg<std::decay_t<A>> operator!(A&& a) {
         return {std::forward<A>(a)};
     }
 
     template < typename A, typename B
-             , typename = std::enable_if_t<option<A>::instance>
-             , typename = std::enable_if_t<option<B>::instance> >
+             , typename = std::enable_if_t<detail::is_option_v<A>>
+             , typename = std::enable_if_t<detail::is_option_v<B>> >
     option_conj<std::decay_t<A>, std::decay_t<B>> operator&&(A&& a, B&& b) {
         return {std::forward<A>(a), std::forward<B>(b)};
     }
 
     template < typename A, typename B
-             , typename = std::enable_if_t<option<A>::instance>
-             , typename = std::enable_if_t<option<B>::instance> >
+             , typename = std::enable_if_t<detail::is_option_v<A>>
+             , typename = std::enable_if_t<detail::is_option_v<B>> >
     option_disj<std::decay_t<A>, std::decay_t<B>> operator||(A&& a, B&& b) {
         return {std::forward<A>(a), std::forward<B>(b)};
     }
@@ -2358,14 +2386,24 @@ namespace ecs_hpp
 
 namespace ecs_hpp
 {
-    inline feature& feature::enable() noexcept {
+    inline feature& feature::enable() & noexcept {
         disabled_ = false;
         return *this;
     }
 
-    inline feature& feature::disable() noexcept {
+    inline feature&& feature::enable() && noexcept {
+        enable();
+        return std::move(*this);
+    }
+
+    inline feature& feature::disable() & noexcept {
         disabled_ = true;
         return *this;
+    }
+
+    inline feature&& feature::disable() && noexcept {
+        disable();
+        return std::move(*this);
     }
 
     inline bool feature::is_enabled() const noexcept {
@@ -2377,24 +2415,35 @@ namespace ecs_hpp
     }
 
     template < typename T, typename... Args >
-    feature& feature::add_system(Args&&... args) {
-        assert(!base_systems_locker_.is_locked());
-        base_systems_.push_back({
-            detail::type_family<typename T::event_type>::id(),
-            std::make_unique<T>(std::forward<Args>(args)...)});
+    feature& feature::add_system(Args&&... args) & {
+        assert(!systems_locker_.is_locked());
+        systems_.push_back(std::make_unique<T>(std::forward<Args>(args)...));
         return *this;
+    }
+
+    template < typename T, typename... Args >
+    feature&& feature::add_system(Args&&... args) && {
+        add_system<T>(std::forward<Args>(args)...);
+        return std::move(*this);
     }
 
     template < typename Event >
     feature& feature::process_event(registry& owner, const Event& event) {
-        const auto event_id = detail::type_family<Event>::id();
-        detail::incremental_lock_guard lock(base_systems_locker_);
-        for ( const auto& [system_event_id, base_system] : base_systems_ ) {
-            if ( event_id == system_event_id ) {
-                auto system_ptr = static_cast<system<Event>*>(base_system.get());
-                system_ptr->process(owner, event);
+        detail::incremental_lock_guard lock(systems_locker_);
+
+        const auto fire_event = [this, &owner](const auto& event){
+            for ( const auto& base_system : systems_ ) {
+                using system_type = system<std::decay_t<decltype(event)>>;
+                if ( auto event_system = dynamic_cast<system_type*>(base_system.get()) ) {
+                    event_system->process(owner, event);
+                }
             }
-        }
+        };
+
+        fire_event(before<Event>{event});
+        fire_event(event);
+        fire_event(after<Event>{event});
+
         return *this;
     }
 }
