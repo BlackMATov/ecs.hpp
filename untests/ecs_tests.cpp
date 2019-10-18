@@ -1583,10 +1583,11 @@ TEST_CASE("registry") {
 
         ecs::registry w;
 
-        w.assign_feature<struct physics>()
-            .add_system<gravity_system>(9)
-            .add_system<movement_system>()
-            .add_system<physics_system>();
+        ecs::registry_filler(w)
+            .feature<struct physics>(ecs::feature()
+                .add_system<gravity_system>(9)
+                .add_system<movement_system>()
+                .add_system<physics_system>());
 
         ecs::entity e = w.create_entity();
         e.assign_component<position_c>(1,2);
