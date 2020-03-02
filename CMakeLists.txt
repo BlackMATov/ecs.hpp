@@ -12,12 +12,6 @@ target_include_directories(${PROJECT_NAME} INTERFACE headers)
 target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_17)
 
 if(BUILD_AS_STANDALONE)
-    option(BUILD_WITH_UNBENCH "Build with benchmarks" OFF)
-    if(BUILD_WITH_UNBENCH)
-        enable_testing()
-        add_subdirectory(unbench)
-    endif()
-
     option(BUILD_WITH_UNTESTS "Build with unit tests" ON)
     if(BUILD_WITH_UNTESTS)
         enable_testing()
