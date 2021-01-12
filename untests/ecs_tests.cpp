@@ -4,10 +4,9 @@
  * Copyright (C) 2018-2021, by Matvey Cherevko (blackmatov@gmail.com)
  ******************************************************************************/
 
-#define CATCH_CONFIG_FAST_COMPILE
-#include <catch2/catch.hpp>
-
 #include <ecs.hpp/ecs.hpp>
+#include "doctest/doctest.h"
+
 namespace ecs = ecs_hpp;
 
 namespace
@@ -59,7 +58,7 @@ namespace
 }
 
 TEST_CASE("detail") {
-    SECTION("get_type_id") {
+    SUBCASE("get_type_id") {
         using namespace ecs::detail;
 
         const auto p_id = type_family<position_c>::id();
@@ -75,7 +74,7 @@ TEST_CASE("detail") {
         REQUIRE(p_id == type_family<position_c>::id());
         REQUIRE(v_id == type_family<velocity_c>::id());
     }
-    SECTION("tuple_tail") {
+    SUBCASE("tuple_tail") {
         using namespace ecs::detail;
         {
             REQUIRE(tuple_tail(std::make_tuple(1, 2, 3)) == std::make_tuple(2, 3));
@@ -91,7 +90,7 @@ TEST_CASE("detail") {
             REQUIRE(tuple_tail(t3) == std::make_tuple(2, 3));
         }
     }
-    SECTION("tuple_contains") {
+    SUBCASE("tuple_contains") {
         using namespace ecs::detail;
         {
             REQUIRE_FALSE(tuple_contains(std::make_tuple(), nullptr));
@@ -105,7 +104,7 @@ TEST_CASE("detail") {
             REQUIRE_FALSE(tuple_contains(std::make_tuple(1,2,3), 4));
         }
     }
-    SECTION("entity_id") {
+    SUBCASE("entity_id") {
         using namespace ecs::detail;
         {
             REQUIRE(entity_id_index(entity_id_join(10u, 20u)) == 10u);
@@ -116,7 +115,7 @@ TEST_CASE("detail") {
             REQUIRE(upgrade_entity_id(entity_id_join(2048u, 1023u)) == entity_id_join(2048u, 0u));
         }
     }
-    SECTION("sparse_set") {
+    SUBCASE("sparse_set") {
         using namespace ecs::detail;
         {
             sparse_set<unsigned, mult_indexer> s{mult_indexer{}};
@@ -197,7 +196,7 @@ TEST_CASE("detail") {
             REQUIRE(s.get_dense_index(position_c(3,4)) == 0);
         }
     }
-    SECTION("sparse_map") {
+    SUBCASE("sparse_map") {
         using namespace ecs::detail;
         {
             struct obj_t {
@@ -315,7 +314,7 @@ TEST_CASE("detail") {
 }
 
 TEST_CASE("registry") {
-    SECTION("entities") {
+    SUBCASE("entities") {
         {
             ecs::registry w;
             ecs::entity e1{w};
@@ -440,7 +439,7 @@ TEST_CASE("registry") {
             REQUIRE_FALSE(w.entity_count());
         }
     }
-    SECTION("components") {
+    SUBCASE("components") {
         {
             ecs::registry w;
             ecs::entity e{w};
@@ -610,7 +609,7 @@ TEST_CASE("registry") {
             REQUIRE(w.remove_all_components<movable_c>() == 0u);
         }
     }
-    SECTION("prototypes") {
+    SUBCASE("prototypes") {
         {
             ecs::prototype p;
             p.component<position_c>(1, 2);
@@ -736,7 +735,7 @@ TEST_CASE("registry") {
             REQUIRE(c2 == velocity_c(0,0));
         }
     }
-    SECTION("component_assigning") {
+    SUBCASE("component_assigning") {
         {
             ecs::registry w;
             ecs::entity e1 = w.create_entity();
@@ -830,7 +829,7 @@ TEST_CASE("registry") {
             e1.destroy();
         }
     }
-    SECTION("component_ensuring") {
+    SUBCASE("component_ensuring") {
         {
             ecs::registry w;
             ecs::entity e1 = w.create_entity();
@@ -855,7 +854,7 @@ TEST_CASE("registry") {
             REQUIRE(c1.get() == velocity_c(20, 10));
         }
     }
-    SECTION("component_accessing") {
+    SUBCASE("component_accessing") {
         {
             ecs::registry w;
 
@@ -982,7 +981,7 @@ TEST_CASE("registry") {
             REQUIRE(e1.get_component<velocity_c>().y == 40);
         }
     }
-    SECTION("cloning") {
+    SUBCASE("cloning") {
         {
             ecs::registry w;
 
@@ -1010,7 +1009,7 @@ TEST_CASE("registry") {
             REQUIRE(e3.get_component<position_c>() == position_c(1, 2));
         }
     }
-    SECTION("for_each_entity") {
+    SUBCASE("for_each_entity") {
         {
             ecs::registry w;
 
@@ -1034,7 +1033,7 @@ TEST_CASE("registry") {
             }
         }
     }
-    SECTION("for_each_component") {
+    SUBCASE("for_each_component") {
         {
             ecs::registry w;
 
@@ -1109,7 +1108,7 @@ TEST_CASE("registry") {
             }
         }
     }
-    SECTION("for_joined_components") {
+    SUBCASE("for_joined_components") {
         {
             ecs::registry w;
 
@@ -1191,7 +1190,7 @@ TEST_CASE("registry") {
             });
         }
     }
-    SECTION("aspects") {
+    SUBCASE("aspects") {
         {
             using empty_aspect = ecs::aspect<>;
 
@@ -1287,7 +1286,7 @@ TEST_CASE("registry") {
             REQUIRE(e2.get_component<position_c>().y == 2);
         }
     }
-    SECTION("options") {
+    SUBCASE("options") {
         {
             ecs::registry w;
 
@@ -1468,7 +1467,7 @@ TEST_CASE("registry") {
             REQUIRE(e1.get_component<position_c>() == position_c(1,2));
         }
     }
-    SECTION("systems") {
+    SUBCASE("systems") {
         struct update_evt {
             int dt{};
         };
@@ -1531,7 +1530,7 @@ TEST_CASE("registry") {
         REQUIRE(e.get_component<position_c>().x == 1 + (3 + 9 * 2) * 2);
         REQUIRE(e.get_component<position_c>().y == 2 + (4 + 9 * 2) * 2);
     }
-    SECTION("recursive_systems") {
+    SUBCASE("recursive_systems") {
         struct update_evt {
             int dt{};
         };
@@ -1605,7 +1604,7 @@ TEST_CASE("registry") {
 
         REQUIRE(w.component_count<velocity_c>() == 0);
     }
-    SECTION("fillers") {
+    SUBCASE("fillers") {
         struct component_n {
             int i = 0;
             component_n(int ni) : i(ni) {}
@@ -1646,7 +1645,7 @@ TEST_CASE("registry") {
             REQUIRE(e2.get_component<component_n>().i == 5);
         }
     }
-    SECTION("memory_usage") {
+    SUBCASE("memory_usage") {
         {
             ecs::registry w;
             REQUIRE(w.memory_usage().entities == 0u);
@@ -1729,7 +1728,7 @@ TEST_CASE("registry") {
                 2 * sizeof(ecs::entity_id));
         }
     }
-    SECTION("empty_component") {
+    SUBCASE("empty_component") {
         ecs::registry w;
         auto e1 = w.create_entity();
         ecs::entity_filler(e1)

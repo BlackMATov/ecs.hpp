@@ -4,14 +4,13 @@
  * Copyright (C) 2018-2021, by Matvey Cherevko (blackmatov@gmail.com)
  ******************************************************************************/
 
-#define CATCH_CONFIG_FAST_COMPILE
-#include <catch2/catch.hpp>
-
 #include <ecs.hpp/ecs.hpp>
-namespace ecs = ecs_hpp;
+#include "doctest/doctest.h"
 
 #include <string>
 #include <iostream>
+
+namespace ecs = ecs_hpp;
 
 TEST_CASE("example") {
 
