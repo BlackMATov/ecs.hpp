@@ -298,14 +298,14 @@ TEST_CASE("detail") {
             };
 
             sparse_map<unsigned, obj_t> m;
-            REQUIRE(m.insert_or_assign(42, obj_t(42)).second);
+            REQUIRE(m.insert_or_assign(42u, obj_t(42)).second);
             REQUIRE(m.has(42));
             REQUIRE(m.get(42).x == 42);
-            REQUIRE_FALSE(m.insert_or_assign(42, obj_t(21)).second);
+            REQUIRE_FALSE(m.insert_or_assign(42u, obj_t(21)).second);
             REQUIRE(m.has(42));
             REQUIRE(m.get(42).x == 21);
             REQUIRE(m.size() == 1);
-            REQUIRE(m.insert_or_assign(84, obj_t(84)).second);
+            REQUIRE(m.insert_or_assign(84u, obj_t(84)).second);
             REQUIRE(m.has(84));
             REQUIRE(m.get(84).x == 84);
             REQUIRE(m.size() == 2);

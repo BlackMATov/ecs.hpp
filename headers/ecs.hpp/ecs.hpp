@@ -426,7 +426,7 @@ namespace ecs_hpp::detail
 
         const_iterator find(const T& v) const noexcept {
             return has(v)
-                ? begin() + sparse_[indexer_(v)]
+                ? begin() + static_cast<std::ptrdiff_t>(sparse_[indexer_(v)])
                 : end();
         }
 
