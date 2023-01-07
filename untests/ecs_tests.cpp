@@ -33,11 +33,13 @@ namespace
     static_assert(std::is_empty_v<movable_c>, "!!!");
     static_assert(std::is_empty_v<disabled_c>, "!!!");
 
+    [[maybe_unused]]
     bool operator==(const position_c& l, const position_c& r) noexcept {
         return l.x == r.x
             && l.y == r.y;
     }
 
+    [[maybe_unused]]
     bool operator==(const velocity_c& l, const velocity_c& r) noexcept {
         return l.x == r.x
             && l.y == r.y;
@@ -45,13 +47,13 @@ namespace
 
     struct mult_indexer {
         template < typename T >
-        std::size_t operator()(const T& v) const noexcept {
+        [[maybe_unused]] std::size_t operator()(const T& v) const noexcept {
             return static_cast<std::size_t>(v * 2);
         }
     };
 
     struct position_c_indexer {
-        std::size_t operator()(const position_c& v) const noexcept {
+        [[maybe_unused]] std::size_t operator()(const position_c& v) const noexcept {
             return static_cast<std::size_t>(v.x);
         }
     };
@@ -1265,16 +1267,16 @@ TEST_CASE("registry") {
                 const_cast<position_c&>(p).y += v.y;
             });
 
-            w.for_each_entity([](ecs::entity e){
-                auto& p = e.get_component<position_c>();
-                const auto& v = e.get_component<velocity_c>();
+            w.for_each_entity([](ecs::entity ne){
+                auto& p = ne.get_component<position_c>();
+                const auto& v = ne.get_component<velocity_c>();
                 p.x += v.x;
                 p.y += v.y;
             }, movable::to_option());
 
-            std::as_const(w).for_each_entity([](const ecs::const_entity& e){
-                const auto& p = e.get_component<position_c>();
-                const auto& v = e.get_component<velocity_c>();
+            std::as_const(w).for_each_entity([](const ecs::const_entity& ne){
+                const auto& p = ne.get_component<position_c>();
+                const auto& v = ne.get_component<velocity_c>();
                 const_cast<position_c&>(p).x += v.x;
                 const_cast<position_c&>(p).y += v.y;
             }, movable::to_option());
@@ -1474,6 +1476,7 @@ TEST_CASE("registry") {
 
         class gravity_system : public ecs::system<update_evt> {
         public:
+            [[maybe_unused]]
             gravity_system(int g)
             : g_(g) {}
 
@@ -1544,6 +1547,7 @@ TEST_CASE("registry") {
 
         class gravity_system : public ecs::system<ecs::before<physics_evt>> {
         public:
+            [[maybe_unused]]
             gravity_system(int g)
             : g_(g) {}
 
@@ -1607,6 +1611,7 @@ TEST_CASE("registry") {
     SUBCASE("fillers") {
         struct component_n {
             int i = 0;
+            [[maybe_unused]]
             component_n(int ni) : i(ni) {}
         };
 
@@ -1614,6 +1619,7 @@ TEST_CASE("registry") {
 
         class system_n : public ecs::system<update_evt> {
         public:
+            [[maybe_unused]]
             system_n(int n) : n_(n) {}
             void process(ecs::registry& owner, const update_evt&) override {
                 owner.for_each_component<component_n>(

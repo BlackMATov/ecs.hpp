@@ -2422,11 +2422,11 @@ namespace ecs_hpp
     feature& feature::process_event(registry& owner, const Event& event) {
         detail::incremental_lock_guard lock(systems_locker_);
 
-        const auto fire_event = [this, &owner](const auto& event){
+        const auto fire_event = [this, &owner](const auto& wrapped_event){
             for ( const auto& base_system : systems_ ) {
-                using system_type = system<std::decay_t<decltype(event)>>;
+                using system_type = system<std::decay_t<decltype(wrapped_event)>>;
                 if ( auto event_system = dynamic_cast<system_type*>(base_system.get()) ) {
-                    event_system->process(owner, event);
+                    event_system->process(owner, wrapped_event);
                 }
             }
         };
