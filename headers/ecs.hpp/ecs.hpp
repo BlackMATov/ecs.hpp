@@ -1,7 +1,7 @@
 /*******************************************************************************
  * This file is part of the "https://github.com/blackmatov/ecs.hpp"
  * For conditions of distribution and use, see copyright notice in LICENSE.md
- * Copyright (C) 2018-2021, by Matvey Cherevko (blackmatov@gmail.com)
+ * Copyright (C) 2018-2023, by Matvey Cherevko (blackmatov@gmail.com)
  ******************************************************************************/
 
 #pragma once
@@ -2422,11 +2422,11 @@ namespace ecs_hpp
     feature& feature::process_event(registry& owner, const Event& event) {
         detail::incremental_lock_guard lock(systems_locker_);
 
-        const auto fire_event = [this, &owner](const auto& event){
+        const auto fire_event = [this, &owner](const auto& wrapped_event){
             for ( const auto& base_system : systems_ ) {
-                using system_type = system<std::decay_t<decltype(event)>>;
+                using system_type = system<std::decay_t<decltype(wrapped_event)>>;
                 if ( auto event_system = dynamic_cast<system_type*>(base_system.get()) ) {
-                    event_system->process(owner, event);
+                    event_system->process(owner, wrapped_event);
                 }
             }
         };
